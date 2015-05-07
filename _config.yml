@@ -1,0 +1,12 @@
+# Site settings
+title: Neil's Boring website ...
+email: neil@duff-howie.com
+description: > # this means to ignore newlines until "baseurl:"
+  ... with added 'stuff'
+baseurl: "" # the subpath of your site, e.g. /blog/
+url: "http://neil.duff-howie.com" # the base hostname & protocol for your site
+twitter_username: neilh23
+github_username:  neilh23
+
+# Build settings
+markdown: kramdown
