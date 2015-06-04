@@ -5,17 +5,24 @@
     border-top: 5px solid $grey-color-dark;
     border-bottom: 1px solid $grey-color-light;
     min-height: 56px;
+    background-image: url("../img/penguin_bg.png");
+    background-repeat: no-repeat;
 
     // Positioning context for the mobile navigation icon
     position: relative;
 }
 
 .site-title {
-    font-size: 26px;
+    font-family: $title-font-family;
+    font-size: $title-font-size;
     line-height: 56px;
+    text-align: right;
+    margin-left: auto;
+    margin-right: 0;
     letter-spacing: -1px;
     margin-bottom: 0;
     float: left;
+    width: 82%;
 
     &,
     &:visited {
