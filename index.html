@@ -7,43 +7,42 @@
     <link href="https://fonts.googleapis.com/css?family=Nunito" rel="stylesheet">
     <link href="https://maxcdn.bootstrapcdn.com/font-awesome/4.6.3/css/font-awesome.min.css" rel="stylesheet" integrity="sha384-T8Gy5hrqNKT+hzMclPo118YTQO6cYprQmhrYwIiQ/3axmI1hQomh7Ud2hPOy8SP1" crossorigin="anonymous">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    
     <link rel='stylesheet prefetch' href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css'>
     <link rel="stylesheet" href="css/style.css">
   </head>
 
   <body>
+
     <div id="wrapper" class="container-fluid">
       <article class="row">
         <header class="row">
-          <div class="col-md-4">
+          <div class="col-md-4 col-xs-2" style="z-index: 10;">
             <h1>Neil</h1>
             <h1 id="surname">Duff-Howie</h1>
-            <nav>
-              <div class="nav-el"><a href="#about"><span class="nvtxt">Info</span><i class="nav-bt fa fa-info-circle" aria-hidden="true"></i></a></div>
-              <div class="nav-el"><a href="#portfolio"><span class="nvtxt">Stuff</span><i class="nav-bt fa fa-folder-open" aria-hidden="true"></i></a></div>
-              <div class="nav-el"><a href="#contact"><span class="nvtxt">Contact</span><i class="nav-bt fa fa-paper-plane" aria-hidden="true"></i></a></div>
-            </nav>
           </div>
-          <div class="col-md-6 col-md-offset-2">
+          <div class="col-md-6 col-md-offset-2 col-xs-10">
             <img id="penguin" class="pull-right" src="img/penguin.jpg">
           </div>
         </header>
         <section id="about" class=" text-center">
           "Mostly, I like penguins"
         </section>
+        <section id="portfolio">
+        </section>
         <section id="contact">
           <div class="row">
-            <div class="col-md-4 text-center links-txt">
+            <div class="col-md-4 text-center links-txt col-xs-6">
               Find me on the web
             </div>
-            <div class="col-md-4 col-md-offset-4 text-center links-txt">
+            <div class="col-md-4 col-md-offset-4 col-xs-6 text-center links-txt">
               Email me
             </div>
           </div>
           <div class="row">
-            <div class="col-md-2 text-center"><a href="https://github.com/neilh23"><i class="fa fa-github"></i></a></div>
-            <div class="col-md-2 text-center"><a href="https://www.linkedin.com/in/neilhowie"><i class="fa fa-linkedin sdf"></i></a></div>
-            <div class="col-md-4 col-md-offset-4 text-center links-txt">
+            <div class="col-md-2 col-xs-3 text-center"><a href="https://github.com/neilh23"><i class="fa fa-github"></i></a></div>
+            <div class="col-md-2 col-xs-3 text-center"><a href="https://www.linkedin.com/in/neilhowie"><i class="fa fa-linkedin sdf"></i></a></div>
+            <div class="col-md-4 col-md-offset-4 col-xs-6 text-center links-txt">
               <a href="mailto:neil@duff-howie.com">neil@duff-howie.com</a>
             </div>
           </div>
@@ -52,6 +51,7 @@
       </article>
     </div>
     <script src='https://code.jquery.com/jquery-2.2.4.min.js'></script>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.11.4/jquery-ui.min.js'></script>
     <script src="js/index.js"></script>
   </body>
 </html>

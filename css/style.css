@@ -2,6 +2,7 @@ body {
   background-color: white;
   height: 100%;
   font-family: 'Nunito', sans-serif;
+  overflow-x: hidden;
 }
 
 header,
@@ -18,37 +19,6 @@ footer {
   height: 100%;
 }
 
-nav {
-  position: fixed;
-  right: 6px;
-  top: 10px;
-  font-size: 1.3em;
-  text-align: right;
-  padding: 3px;
-  z-index: 10;
-}
-
-.nav-el {
-  margin-bottom: 6px;
-  text-shadow: 0px 0px 20px rgba(255, 255, 255, 1);
-}
-
-.nav-el a:hover,
-.nav-el a:active {
-  text-decoration: none;
-}
-
-nav div {
-  padding: 3px;
-  line-height: 25px;
-  text-align: right;
-}
-
-.nvtxt {
-  padding-right: 6px;
-  overflow: hidden;
-}
-
 header {
   margin-top: 0px;
 }
@@ -62,6 +32,7 @@ h1 {
   font-size: 3.3em;
   color: #0A266D;
   text-shadow: 1px 1px 2px black, 0 0 25px #FFB473, 0 0 2px #A24B00;
+  white-space: nowrap;
 }
 
 #surname {
@@ -70,6 +41,18 @@ h1 {
   color: #A24B00;
 }
 
+#penguin {
+  width: 150px;
+  border-radius: 50%;
+  margin-right: 40px;
+  z-index: -1;
+}
+
+@media (max-width: 550px) {
+  #penguin {
+    visibility: hidden;
+  }
+}
 section {
   background-color: #2349A7;
   color: white;
@@ -81,10 +64,10 @@ section {
 
 #about {
   font-size: 2.5em;
-  background-image: url('../img/skye.jpg');
+  background-image: url("../img/skye.jpg");
   background-repeat: no-repeat;
   background-color: black;
-  background-position: center; 
+  background-position: center;
   color: black;
   height: 500px;
 }
@@ -104,10 +87,4 @@ section a:focus {
 
 .links-txt {
   margin-bottom: 10px;
-}
-
-#penguin {
-  width: 150px;
-  border-radius: 50%;
-  margin-right: 40px;
 }
