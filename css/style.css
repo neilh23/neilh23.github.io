@@ -1,0 +1,113 @@
+body {
+  background-color: white;
+  height: 100%;
+  font-family: 'Nunito', sans-serif;
+}
+
+header,
+footer {
+  background-color: #3BCC45;
+  padding: 5px 15px;
+  margin: 5px 3px 5px 3px;
+}
+
+#wrapper {
+  background-color: #FFB473;
+  margin: 0px;
+  padding: 0px;
+  height: 100%;
+}
+
+nav {
+  position: fixed;
+  right: 6px;
+  top: 10px;
+  font-size: 1.3em;
+  text-align: right;
+  padding: 3px;
+  z-index: 10;
+}
+
+.nav-el {
+  margin-bottom: 6px;
+  text-shadow: 0px 0px 20px rgba(255, 255, 255, 1);
+}
+
+.nav-el a:hover,
+.nav-el a:active {
+  text-decoration: none;
+}
+
+nav div {
+  padding: 3px;
+  line-height: 25px;
+  text-align: right;
+}
+
+.nvtxt {
+  padding-right: 6px;
+  overflow: hidden;
+}
+
+header {
+  margin-top: 0px;
+}
+
+footer {
+  margin-bottom: 0px;
+}
+
+h1 {
+  font-family: 'Gabriela', serif;
+  font-size: 3.3em;
+  color: #0A266D;
+  text-shadow: 1px 1px 2px black, 0 0 25px #FFB473, 0 0 2px #A24B00;
+}
+
+#surname {
+  margin-top: -27px;
+  font-size: 4.2em;
+  color: #A24B00;
+}
+
+section {
+  background-color: #2349A7;
+  color: white;
+  text-shadow: 1px 1px 2px #A24B00;
+  margin: 5px 0px 5px 5px;
+  padding: 25px 20px;
+  font-size: 1.6em;
+}
+
+#about {
+  font-size: 2.5em;
+  background-image: url('../img/skye.jpg');
+  background-repeat: no-repeat;
+  background-color: black;
+  background-position: center; 
+  color: black;
+  height: 500px;
+}
+
+section a:link,
+section a:hover,
+section a:active,
+section a:visited,
+section a:focus {
+  color: #CD6104;
+}
+
+#contact .fa {
+  font-size: 4.0em;
+  color: #A24B00;
+}
+
+.links-txt {
+  margin-bottom: 10px;
+}
+
+#penguin {
+  width: 150px;
+  border-radius: 50%;
+  margin-right: 40px;
+}
