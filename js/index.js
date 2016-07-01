@@ -16,9 +16,26 @@ $(document).ready(function() {
       
     t.fadeOut();
   });
-  
-  $('.fa').onmouseover(function() {
-    $(this).addClass("animated shake");
+
+  $(window).scroll(function() {
+ 
+    if ($(document).scrollTop() > 100) {
+      $('#penguin').removeClass('penguin');
+      $('#surname').addClass('surname-float');
+      $('#forename').addClass('forename-float');
+      $('#penguin').addClass('penguin-float');
+      $('header').addClass('header-float');
+      $('#about').addClass('about-float');
+      $('#totop').show();
+    } else {
+      $('header').removeClass('header-float');
+      $('#surname').removeClass('surname-float');
+      $('#forename').removeClass('forename-float');
+      $('#penguin').removeClass('penguin-float');
+      $('#about').removeClass('about-float');
+      $('#penguin').addClass('penguin');
+      $('#totop').hide();
+    }
   });
 
   $('a[href*="#"]:not([href="#"])').click(function() {
