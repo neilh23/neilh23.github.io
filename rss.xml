@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?><rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom" version="2.0"><channel><title><![CDATA[Penguin and Tonic]]></title><description><![CDATA[Penguin and Tonic]]></description><link>http://neil.duff-howie.com</link><generator>RSS for Node</generator><lastBuildDate>Mon, 29 Jul 2019 10:05:27 GMT</lastBuildDate><item><title><![CDATA[Penguins are Awesome]]></title><description><![CDATA[This is my first post on my new fake blog! How exciting! I’m sure I’ll write a lot more interesting things in the future. Oh, and here’s a…]]></description><link>http://neil.duff-howie.com/penguins-are-awesome/</link><guid isPermaLink="false">http://neil.duff-howie.com/penguins-are-awesome/</guid><pubDate>Invalid Date</pubDate><content:encoded>&lt;p&gt;This is my first post on my new fake blog! How exciting!&lt;/p&gt;
+&lt;p&gt;I’m sure I’ll write a lot more interesting things in the future.&lt;/p&gt;
+&lt;p&gt;Oh, and here’s a random page about
+&lt;a href=&quot;https://www.birdnote.org/show/there%E2%80%99s-something-about-penguins&quot;&gt;penguins&lt;/a&gt;.&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;There’s just something about penguins.
+Pleasantly plump, they stand upright and teeter like toddlers.
+Although often depicted in black and white, most are actually more colorful.
+Seven species have long, jaunty golden feather tufts above their eyes.
+King Penguins (like these) and Emperor Penguins have necks that glisten gold.
+The Little Penguin is blue and white.
+Penguins are found in the Southern Hemisphere, from the Equator to Antarctica.&lt;Paste&gt;&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;&lt;span
+      class=&quot;gatsby-resp-image-wrapper&quot;
+      style=&quot;position: relative; display: block; margin-left: auto; margin-right: auto;  max-width: 285px;&quot;
+    &gt;
+      &lt;a
+    class=&quot;gatsby-resp-image-link&quot;
+    href=&quot;/static/2f75e0773886bcbb43b2426521ce1ccd/531b1/some_penguins.jpg&quot;
+    style=&quot;display: block&quot;
+    target=&quot;_blank&quot;
+    rel=&quot;noopener&quot;
+  &gt;
+    &lt;span
+    class=&quot;gatsby-resp-image-background-image&quot;
+    style=&quot;padding-bottom: 100%; position: relative; bottom: 0; left: 0; background-image: url(&apos;data:image/jpeg;base64,/9j/2wBDABALDA4MChAODQ4SERATGCgaGBYWGDEjJR0oOjM9PDkzODdASFxOQERXRTc4UG1RV19iZ2hnPk1xeXBkeFxlZ2P/2wBDARESEhgVGC8aGi9jQjhCY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2P/wgARCAAUABQDASIAAhEBAxEB/8QAFwABAQEBAAAAAAAAAAAAAAAAAAQDAf/EABQBAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhADEAAAAau9yNmQoiCoH//EABwQAAMAAgMBAAAAAAAAAAAAAAECAxESACExMv/aAAgBAQABBQI5FVB1mMzr525eupP3M8VFZf/EABQRAQAAAAAAAAAAAAAAAAAAACD/2gAIAQMBAT8BH//EABQRAQAAAAAAAAAAAAAAAAAAACD/2gAIAQIBAT8BH//EAB0QAAICAgMBAAAAAAAAAAAAAAABAhEhMQNBYXH/2gAIAQEABj8CjHpkr3miLe2jG0fNlYF6chbVn//EAB4QAQACAQQDAAAAAAAAAAAAAAEAESExQVFhcYGh/9oACAEBAAE/IcCCbfJLcTOjracsw1LLxwJLsXXf8lWKYml9pdpBHbywgNcs/9oADAMBAAIAAwAAABBwAD7/xAAXEQADAQAAAAAAAAAAAAAAAAAAAREQ/9oACAEDAQE/EIib/8QAFhEBAQEAAAAAAAAAAAAAAAAAAQAQ/9oACAECAQE/EId//8QAHBABAQEBAAIDAAAAAAAAAAAAAREAITGRQVGh/9oACAEBAAE/EIUuFIp+Jq6QniEXrFIIIIC/BgAKkLL3pfpNNKLkeQ9xQJSxHnrTUCUBzBQEoi8O+sm+8hv/2Q==&apos;); background-size: cover; display: block;&quot;
+  &gt;&lt;/span&gt;
+  &lt;img
+        class=&quot;gatsby-resp-image-image&quot;
+        alt=&quot;Penguins&quot;
+        title=&quot;Penguins&quot;
+        src=&quot;/static/2f75e0773886bcbb43b2426521ce1ccd/531b1/some_penguins.jpg&quot;
+        srcset=&quot;/static/2f75e0773886bcbb43b2426521ce1ccd/8ee9c/some_penguins.jpg 148w,
+/static/2f75e0773886bcbb43b2426521ce1ccd/531b1/some_penguins.jpg 285w&quot;
+        sizes=&quot;(max-width: 285px) 100vw, 285px&quot;
+      /&gt;
+  &lt;/a&gt;
+    &lt;/span&gt;&lt;/p&gt;</content:encoded></item></channel></rss>
