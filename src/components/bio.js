@@ -57,6 +57,8 @@ const Bio = () => {
       <p>
         Written by <strong>{author}</strong> who lives on the Isle of Skye
         with his wife, daughter and colony of penguins.
+      <br/>
+        You should visit my <a href="https://ginlemonade.com">Wife's Blog</a>, it's much better than this ...
         {` `}
       {/*
         <a href={`https://twitter.com/${social.twitter}`}>
