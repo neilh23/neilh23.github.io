@@ -137,13 +137,22 @@ const PENGUIN_X   = 90;
 const PENGUIN_W   = 30;
 const PENGUIN_H   = 34;
 
+// ── Walk mode constants ───────────────────────────────────────────────────────
+const GROUND_Y        = H - 80;    // ground level in walk mode
+const WALK_GRAVITY    = 0.55;
+const WALK_JUMP_VEL   = -10;
+const WALK_SECTION_W  = 1800;      // total width of a land section
+const SWIM_BEFORE_WALK = 700;      // swim frames before a walk section triggers
+
 // ── Game state ────────────────────────────────────────────────────────────────
 let state = 'idle'; // idle | playing | dead
+let mode = 'swim';  // swim | transition_up | walk | transition_down
 let penguin, pipes, fish, seals, squids, score, bestScore, frameCount, bgOffset, deathTimer;
+let swimFrames, landSection, transTimer;
 bestScore = 0;
 
 function initGame() {
-  penguin = { x: PENGUIN_X, y: H / 2, vy: 0, angle: 0, wobble: 0 };
+  penguin = { x: PENGUIN_X, y: H / 2, vy: 0, angle: 0, wobble: 0, onGround: false };
   pipes = [];
   fish = [];
   seals = [];
@@ -152,7 +161,11 @@ function initGame() {
   frameCount = 0;
   bgOffset = 0;
   deathTimer = 0;
-  nextPipeIn = 30; // first pipe comes quickly
+  nextPipeIn = 30;
+  mode = 'swim';
+  swimFrames = 0;
+  landSection = null;
+  transTimer = 0;
   document.getElementById('score-display').textContent = '0';
 }
 
@@ -225,6 +238,51 @@ function spawnObstacle() {
   }
 }
 
+// ── Walk section generation ───────────────────────────────────────────────────
+function generateWalkSection() {
+  const obs = [];
+  let cx = 200; // start placing obstacles after a short run-up
+  while (cx < WALK_SECTION_W - 300) {
+    const roll = Math.random();
+    if (roll < 0.3) {
+      // Ice cube on ground (jump over)
+      const w = 40 + Math.random() * 30;
+      const h = 40 + Math.random() * 30;
+      obs.push({ type: 'cube', x: cx, y: GROUND_Y - h, w, h });
+      cx += w + 80 + Math.random() * 60;
+    } else if (roll < 0.5) {
+      // Tall ice cube stack (must jump on top of, or jump over gap after)
+      const w = 50 + Math.random() * 20;
+      const h = 70 + Math.random() * 40;
+      obs.push({ type: 'cube', x: cx, y: GROUND_Y - h, w, h });
+      cx += w + 100 + Math.random() * 80;
+    } else if (roll < 0.7) {
+      // Gap in the floor
+      const gapW = 60 + Math.random() * 50;
+      obs.push({ type: 'gap', x: cx, w: gapW });
+      cx += gapW + 100 + Math.random() * 60;
+    } else if (roll < 0.85) {
+      // Snow mound (small bump to hop over)
+      const w = 50 + Math.random() * 20;
+      obs.push({ type: 'mound', x: cx, w, h: 25 + Math.random() * 15 });
+      cx += w + 70 + Math.random() * 50;
+    } else {
+      // Elevated ice platform (floating cube to land on)
+      const w = 60 + Math.random() * 40;
+      obs.push({ type: 'cube', x: cx, y: GROUND_Y - 100 - Math.random() * 40, w, h: 24 });
+      cx += w + 90 + Math.random() * 60;
+    }
+  }
+  return {
+    scrollX: 0,
+    totalWidth: WALK_SECTION_W,
+    obstacles: obs,
+    // Fishing penguin NPC at the end
+    npcX: WALK_SECTION_W - 140,
+    holeX: WALK_SECTION_W - 100,
+  };
+}
+
 // ── Pixel art drawing helpers ─────────────────────────────────────────────────
 function px(x, y, w, h, color) {
   ctx.fillStyle = color;
@@ -265,6 +323,102 @@ function drawPenguin(x, y, angle, wobble) {
   // Feet (tucked behind, visible underneath)
   px(-16*S, 10*S+w, 5*S, 4*S, '#ff8c00');
   px(-8*S,  12*S+w, 5*S, 3*S, '#ff8c00');
+
+  ctx.restore();
+}
+
+// Draw walking penguin (upright, waddling)
+function drawWalkPenguin(x, y, onGround) {
+  ctx.save();
+  ctx.translate(x + PENGUIN_W / 2, y + PENGUIN_H / 2);
+  const S = 0.78;
+
+  // Waddle animation (only when on ground)
+  const waddle = onGround ? Math.sin(frameCount * 0.3) * 0.08 : 0;
+  ctx.rotate(waddle);
+  const footAnim = onGround ? Math.sin(frameCount * 0.3) * 3 : 0;
+
+  // Body (upright, round)
+  px(-12*S, -16*S, 24*S, 32*S, '#1a1a2e');
+  // Belly
+  px(-8*S, -10*S, 16*S, 22*S, '#e8e8d0');
+  // Belly shine
+  px(-3*S, -6*S, 6*S, 10*S, '#f0f0e0');
+  // Head (on top)
+  px(-10*S, -26*S, 20*S, 14*S, '#1a1a2e');
+  // Beak (pointing right)
+  px(8*S, -20*S, 8*S, 4*S, '#ff8c00');
+  // Eye
+  px(4*S, -24*S, 4*S, 4*S, '#ffffff');
+  px(5*S, -23*S, 2*S, 2*S, '#000');
+  // Blush
+  px(0*S, -16*S, 4*S, 3*S, '#ffb3c6');
+  // Flippers (arms at sides)
+  const flapOff = onGround ? Math.sin(frameCount * 0.15) * 2 : -4;
+  px(-16*S, -10*S + flapOff, 6*S, 16*S, '#0d0d1a');
+  px(10*S, -10*S - flapOff, 6*S, 16*S, '#0d0d1a');
+  // Feet (alternating waddle)
+  px(-8*S + footAnim, 14*S, 7*S, 5*S, '#ff8c00');
+  px(1*S - footAnim, 14*S, 7*S, 5*S, '#ff8c00');
+
+  ctx.restore();
+}
+
+// Draw fishing penguin NPC
+function drawFishingPenguin(x, y) {
+  ctx.save();
+  ctx.translate(x, y);
+  const S = 0.8;
+
+  // Body (sitting, facing the hole on the left)
+  px(-10*S, -12*S, 22*S, 28*S, '#1a1a2e');
+  // Belly
+  px(-6*S, -6*S, 14*S, 20*S, '#e8e8d0');
+  // Head
+  px(-8*S, -22*S, 18*S, 14*S, '#1a1a2e');
+  // Beak (facing left)
+  px(-14*S, -16*S, 8*S, 4*S, '#ff8c00');
+  // Eye
+  px(-6*S, -20*S, 4*S, 4*S, '#ffffff');
+  px(-5*S, -19*S, 2*S, 2*S, '#000');
+  // Blush
+  px(-8*S, -13*S, 4*S, 3*S, '#ffb3c6');
+  // Hat (red beanie with bobble)
+  px(-9*S, -28*S, 20*S, 8*S, '#cc3333');
+  px(-6*S, -32*S, 14*S, 6*S, '#cc3333');
+  px(-2*S, -36*S, 6*S, 5*S, '#cc3333');
+  // Bobble
+  px(0*S, -39*S, 4*S, 4*S, '#fff');
+  // Hat brim stripe
+  px(-9*S, -24*S, 20*S, 3*S, '#fff');
+  // Flippers - one holding rod
+  px(-14*S, -6*S, 6*S, 12*S, '#0d0d1a');
+  px(10*S, -4*S, 6*S, 10*S, '#0d0d1a');
+  // Feet
+  px(-8*S, 14*S, 7*S, 4*S, '#ff8c00');
+  px(2*S, 14*S, 7*S, 4*S, '#ff8c00');
+
+  // Fishing rod (extends left over the hole)
+  ctx.strokeStyle = '#8B4513';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-10*S, -6*S);
+  ctx.lineTo(-60*S, -50*S);
+  ctx.stroke();
+  // Fishing line
+  ctx.strokeStyle = '#ccc';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(-60*S, -50*S);
+  ctx.lineTo(-55*S, 20*S);
+  ctx.stroke();
+  // Hook
+  ctx.strokeStyle = '#999';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(-55*S, 20*S);
+  ctx.arc(-55*S + 3, 20*S, 3, Math.PI, 0, true);
+  ctx.stroke();
 
   ctx.restore();
 }
@@ -400,57 +554,62 @@ function drawFish(x, y, anim) {
   }
 }
 
-// Draw leopard seal (facing LEFT toward the penguin)
-function drawSeal(x, y, anim) {
-  const bob = Math.sin(anim * 0.04) * 15;
-  const sy = y + bob;
+// Draw leopard seal (facing LEFT toward the penguin, rotated to angle)
+function drawSeal(x, y, anim, angle) {
+  ctx.save();
+  ctx.translate(x + SEAL_W / 2, y + 14);
+  ctx.rotate(angle || 0);
+
+  const hw = SEAL_W / 2;
 
   // Body (long, sleek, dark grey with spots)
-  px(x, sy + 6, SEAL_W, 20, '#5a5a6a');
+  px(-hw, -8, SEAL_W, 20, '#5a5a6a');
   // Belly (lighter)
-  px(x + 12, sy + 14, SEAL_W - 20, 10, '#8a8a9a');
+  px(-hw + 12, 0, SEAL_W - 20, 10, '#8a8a9a');
   // Head (front LEFT, facing penguin)
-  px(x, sy + 2, 24, 22, '#5a5a6a');
+  px(-hw, -12, 24, 22, '#5a5a6a');
   // Snout (pointing left)
-  px(x - 6, sy + 8, 10, 10, '#4a4a5a');
+  px(-hw - 6, -6, 10, 10, '#4a4a5a');
   // Jaw (open, menacing, left side)
-  px(x - 8, sy + 14, 10, 6, '#6a3030');
+  px(-hw - 8, 0, 10, 6, '#6a3030');
   // Teeth
-  px(x - 2, sy + 13, 2, 3, '#fff');
-  px(x - 5, sy + 13, 2, 3, '#fff');
-  px(x - 2, sy + 18, 2, 2, '#fff');
-  // Eye (menacing, on left side of head)
-  px(x + 11, sy + 6, 5, 5, '#fff');
-  px(x + 12, sy + 7, 3, 3, '#200');
+  px(-hw - 2, -1, 2, 3, '#fff');
+  px(-hw - 5, -1, 2, 3, '#fff');
+  px(-hw - 2, 4, 2, 2, '#fff');
+  // Eye (menacing)
+  px(-hw + 11, -8, 5, 5, '#fff');
+  px(-hw + 12, -7, 3, 3, '#200');
   // Pupil slit
-  px(x + 12, sy + 7, 1, 3, '#000');
+  px(-hw + 12, -7, 1, 3, '#000');
   // Leopard spots (along body behind head)
   const spots = [28, 42, 56, 68, 78];
   spots.forEach(sx2 => {
     if (sx2 < SEAL_W) {
-      px(x + sx2, sy + 8, 5, 4, '#3a3a4a');
-      px(x + sx2 - 3, sy + 15, 4, 3, '#3a3a4a');
+      px(-hw + sx2, -6, 5, 4, '#3a3a4a');
+      px(-hw + sx2 - 3, 1, 4, 3, '#3a3a4a');
     }
   });
   // Tail (RIGHT side, forked)
   ctx.fillStyle = '#4a4a5a';
   ctx.beginPath();
-  ctx.moveTo(x + SEAL_W - 4, sy + 10);
-  ctx.lineTo(x + SEAL_W + 12, sy + 4);
-  ctx.lineTo(x + SEAL_W + 6, sy + 12);
+  ctx.moveTo(hw - 4, -4);
+  ctx.lineTo(hw + 12, -10);
+  ctx.lineTo(hw + 6, -2);
   ctx.closePath();
   ctx.fill();
   ctx.beginPath();
-  ctx.moveTo(x + SEAL_W - 4, sy + 18);
-  ctx.lineTo(x + SEAL_W + 12, sy + 24);
-  ctx.lineTo(x + SEAL_W + 6, sy + 16);
+  ctx.moveTo(hw - 4, 4);
+  ctx.lineTo(hw + 12, 10);
+  ctx.lineTo(hw + 6, 2);
   ctx.closePath();
   ctx.fill();
   // Front flippers (near head, left side)
   const flipAnim = Math.sin(anim * 0.1) * 4;
-  px(x + 18, sy + 22 + flipAnim, 12, 6, '#4a4a5a');
+  px(-hw + 18, 8 + flipAnim, 12, 6, '#4a4a5a');
   // Back flippers (near tail, right side)
-  px(x + SEAL_W - 16, sy + 22 - flipAnim, 10, 6, '#4a4a5a');
+  px(hw - 16, 8 - flipAnim, 10, 6, '#4a4a5a');
+
+  ctx.restore();
 }
 
 // Draw squid (rising from bottom, collectible)
@@ -552,6 +711,267 @@ function drawBackground(offset) {
   });
 }
 
+// ── Walk mode drawing ─────────────────────────────────────────────────────────
+function drawWalkBackground() {
+  // Sky gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0,   '#87ceeb');
+  grad.addColorStop(0.4, '#b0e0f0');
+  grad.addColorStop(0.7, '#d4eef8');
+  grad.addColorStop(1,   '#e8f4f8');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Distant mountains
+  ctx.fillStyle = '#c8dce8';
+  ctx.beginPath();
+  ctx.moveTo(0, GROUND_Y - 60);
+  ctx.lineTo(60, GROUND_Y - 140);
+  ctx.lineTo(130, GROUND_Y - 80);
+  ctx.lineTo(200, GROUND_Y - 160);
+  ctx.lineTo(280, GROUND_Y - 90);
+  ctx.lineTo(350, GROUND_Y - 170);
+  ctx.lineTo(420, GROUND_Y - 100);
+  ctx.lineTo(W, GROUND_Y - 130);
+  ctx.lineTo(W, GROUND_Y);
+  ctx.lineTo(0, GROUND_Y);
+  ctx.closePath();
+  ctx.fill();
+
+  // Mountain snow caps
+  ctx.fillStyle = '#e8f0f6';
+  ctx.beginPath();
+  ctx.moveTo(50, GROUND_Y - 130);
+  ctx.lineTo(60, GROUND_Y - 140);
+  ctx.lineTo(70, GROUND_Y - 128);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(190, GROUND_Y - 148);
+  ctx.lineTo(200, GROUND_Y - 160);
+  ctx.lineTo(215, GROUND_Y - 142);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(340, GROUND_Y - 158);
+  ctx.lineTo(350, GROUND_Y - 170);
+  ctx.lineTo(365, GROUND_Y - 150);
+  ctx.closePath();
+  ctx.fill();
+
+  // Clouds
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  const cloudOff = (bgOffset * 0.2) % (W + 200);
+  [[100, 60, 50], [300, 40, 35], [180, 90, 25]].forEach(([cx, cy, r]) => {
+    const ccx = ((cx - cloudOff) % (W + 200) + W + 200) % (W + 200) - 100;
+    ctx.beginPath();
+    ctx.arc(ccx, cy, r, 0, Math.PI * 2);
+    ctx.arc(ccx + r, cy - 5, r * 0.8, 0, Math.PI * 2);
+    ctx.arc(ccx - r * 0.6, cy + 3, r * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function drawIceGround(scrollX) {
+  // Main ice floor
+  px(0, GROUND_Y, W, H - GROUND_Y, '#c8e8f0');
+  // Top edge highlight
+  px(0, GROUND_Y, W, 4, '#e8f8ff');
+  // Ice texture
+  for (let i = 0; i < W; i += 30) {
+    const tx = ((i + scrollX * 0.5) % 200);
+    px(i, GROUND_Y + 15 + (tx % 7), 12, 2, '#a8d0e0');
+    px(i + 10, GROUND_Y + 35 + ((tx * 3) % 11), 8, 2, '#a8d0e0');
+  }
+  // Snow sprinkles on top
+  for (let i = 0; i < W; i += 20) {
+    px(i + ((scrollX * 0.3 + i * 7) % 15), GROUND_Y - 2, 4, 4, '#f0f8ff');
+  }
+}
+
+function drawLandObstacle(obs, offsetX) {
+  const ox = obs.x - offsetX;
+  if (ox < -100 || ox > W + 50) return;
+
+  if (obs.type === 'cube') {
+    // Ice cube
+    px(ox, obs.y, obs.w, obs.h, '#a0d8ea');
+    // Highlight top
+    px(ox, obs.y, obs.w, 4, '#d0f0ff');
+    // Shading right
+    px(ox + obs.w - 5, obs.y, 5, obs.h, '#80c0d8');
+    // Crack lines
+    px(ox + obs.w * 0.3, obs.y + 8, 2, obs.h * 0.5, '#88c0d0');
+    // Sparkle
+    px(ox + 6, obs.y + 6, 3, 3, '#ffffff');
+    px(ox + obs.w - 12, obs.y + obs.h * 0.4, 2, 2, '#fff');
+  } else if (obs.type === 'gap') {
+    // Draw gap in the ground (dark water below)
+    px(ox, GROUND_Y, obs.w, H - GROUND_Y, '#0a2a4a');
+    // Water surface
+    px(ox, GROUND_Y + 4, obs.w, 6, '#1a5a8a');
+    // Ripples
+    for (let r = 0; r < obs.w - 8; r += 12) {
+      const ry = Math.sin((frameCount * 0.08 + r) * 0.5) * 2;
+      px(ox + 4 + r, GROUND_Y + 6 + ry, 8, 2, '#2a7aba');
+    }
+    // Edge cracks
+    px(ox - 2, GROUND_Y, 4, 12, '#90c8d8');
+    px(ox + obs.w - 2, GROUND_Y, 4, 12, '#90c8d8');
+  } else if (obs.type === 'mound') {
+    // Snow mound (triangle)
+    ctx.fillStyle = '#e0f0f8';
+    ctx.beginPath();
+    ctx.moveTo(ox, GROUND_Y);
+    ctx.lineTo(ox + obs.w / 2, GROUND_Y - obs.h);
+    ctx.lineTo(ox + obs.w, GROUND_Y);
+    ctx.closePath();
+    ctx.fill();
+    // Shading
+    ctx.fillStyle = '#c8dce8';
+    ctx.beginPath();
+    ctx.moveTo(ox + obs.w * 0.5, GROUND_Y - obs.h);
+    ctx.lineTo(ox + obs.w, GROUND_Y);
+    ctx.lineTo(ox + obs.w * 0.5, GROUND_Y);
+    ctx.closePath();
+    ctx.fill();
+    // Snow sparkles
+    px(ox + obs.w * 0.35, GROUND_Y - obs.h * 0.6, 3, 3, '#fff');
+  }
+}
+
+function drawExitHole(ox) {
+  // Hole in the ice
+  ctx.fillStyle = '#0a2a4a';
+  ctx.beginPath();
+  ctx.ellipse(ox, GROUND_Y + 2, 35, 14, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Water surface
+  ctx.fillStyle = '#1a5a8a';
+  ctx.beginPath();
+  ctx.ellipse(ox, GROUND_Y, 33, 10, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Ripples
+  ctx.strokeStyle = '#3a8aba';
+  ctx.lineWidth = 1;
+  const rippleR = 10 + Math.sin(frameCount * 0.06) * 6;
+  ctx.beginPath();
+  ctx.ellipse(ox, GROUND_Y, rippleR, rippleR * 0.35, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  // Ice edge highlight
+  ctx.strokeStyle = '#d0f0ff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(ox, GROUND_Y, 35, 14, 0, Math.PI, Math.PI * 2);
+  ctx.stroke();
+}
+
+function drawIceWall(x) {
+  // Full-screen iceberg — solid ice fills the entire screen from x rightward,
+  // full height. The hole is cut into the front face only.
+  const holeBot = 100;
+  const wallFace = 60;
+  const fillW = W - x + 10;
+
+  if (fillW <= 0) return;
+
+  // 1) Solid ice filling entire screen height from x to right edge
+  px(x, 0, fillW, H, '#90c8d8');
+
+  // Darker back layer for depth
+  if (fillW > wallFace) {
+    px(x + wallFace, 0, fillW - wallFace, H, '#82bace');
+    // Texture lines on back
+    for (let ty = 30; ty < H; ty += 60) {
+      const tw = Math.min(80, fillW - wallFace - 20);
+      if (tw > 0) px(x + wallFace + 20, ty, tw, 2, '#70a8b8');
+    }
+    // Sparkles on back
+    for (let ty = 50; ty < H; ty += 90) {
+      px(x + wallFace + 40, ty, 3, 3, '#d0f0ff');
+    }
+  }
+
+  // 2) Cut the hole into the front face — draw ocean through it
+  const grad = ctx.createLinearGradient(0, 0, 0, holeBot);
+  grad.addColorStop(0, '#0d3b6e');
+  grad.addColorStop(1, '#0a2a4a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(x, 0, wallFace, holeBot);
+
+  // Hole bottom lip
+  px(x, holeBot, wallFace, 6, '#70a8b8');
+  px(x, holeBot - 3, wallFace, 3, '#aadaea');
+
+  // Front face shading (below hole)
+  px(x, holeBot, 6, H - holeBot, '#70a8b8');
+  px(x + wallFace - 4, holeBot, 4, H - holeBot, '#78b0c0');
+
+  // Cracks on wall face
+  px(x + 20, holeBot + 30, 2, 60, '#78b0c0');
+  px(x + 40, holeBot + 10, 2, 40, '#78b0c0');
+  px(x + 15, holeBot + 150, 2, 45, '#78b0c0');
+  px(x + 35, holeBot + 50, 3, 3, '#d0f0ff');
+
+  // 3) Light rays shining down through the hole
+  ctx.save();
+  const lightAlpha = 0.12 + Math.sin(frameCount * 0.05) * 0.05;
+  ctx.fillStyle = `rgba(255,255,200,${lightAlpha})`;
+  ctx.beginPath();
+  ctx.moveTo(x, 0);
+  ctx.lineTo(x + wallFace, 0);
+  ctx.lineTo(x + wallFace + 80, holeBot + 120);
+  ctx.lineTo(x - 80, holeBot + 120);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = `rgba(255,255,220,${lightAlpha * 0.8})`;
+  ctx.beginPath();
+  ctx.moveTo(x + 10, 0);
+  ctx.lineTo(x + wallFace - 10, 0);
+  ctx.lineTo(x + wallFace + 20, holeBot + 50);
+  ctx.lineTo(x - 20, holeBot + 50);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function playJump() {
+  try {
+    const ac = getAudio();
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain); gain.connect(ac.destination);
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(250, ac.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(600, ac.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.1, ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.15);
+    osc.start(ac.currentTime);
+    osc.stop(ac.currentTime + 0.18);
+  } catch(e) {}
+}
+
+function playSplash() {
+  try {
+    const ac = getAudio();
+    // White noise burst for splash
+    const bufSize = ac.sampleRate * 0.15;
+    const buf = ac.createBuffer(1, bufSize, ac.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufSize);
+    const src = ac.createBufferSource();
+    src.buffer = buf;
+    const filt = ac.createBiquadFilter();
+    filt.type = 'lowpass';
+    filt.frequency.value = 800;
+    const gain = ac.createGain();
+    gain.gain.setValueAtTime(0.2, ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.2);
+    src.connect(filt); filt.connect(gain); gain.connect(ac.destination);
+    src.start(); src.stop(ac.currentTime + 0.2);
+  } catch(e) {}
+}
+
 // ── Overlay screens ───────────────────────────────────────────────────────────
 function drawIdle() {
   // Title panel
@@ -646,10 +1066,22 @@ function checkCollision() {
   const px1 = penguin.x + 6,  py1 = penguin.y + 6;
   const px2 = penguin.x + PENGUIN_W - 6, py2 = penguin.y + PENGUIN_H - 6;
 
-  // World bounds
-  if (py1 < 0 || py2 > H) return true;
+  // World bounds (disable top boundary when ice wall is on screen so penguin can escape)
+  const wallOnScreen = pipes.some(p => p.isWall);
+  if (!wallOnScreen && py1 < 0) return true;
+  if (py2 > H) return true;
 
   for (const p of pipes) {
+    // Ice wall collision (hole at top 20-100px)
+    if (p.isWall) {
+      // Collide with the leading edge of the wall only
+      // The penguin dies if the wall's front edge reaches it and it's not above the hole
+      if (p.x <= px2 && p.x + 8 >= px1) {
+        if (py2 > 100) return true; // smacked into the wall face
+      }
+      continue;
+    }
+
     const ox = p.x, ox2 = p.x + OBS_W;
 
     // Main body collision (rectangle vs rectangle)
@@ -683,12 +1115,67 @@ function checkCollision() {
 
   // Seal collision (rectangle vs rectangle with bob)
   for (const s of seals) {
-    const bob = Math.sin(s.anim * 0.04) * 15;
-    const sy = s.y + bob;
+    const sy = s.y + (s.bob || 0);
     const sx1 = s.x - 8, sx2 = s.x + SEAL_W + 12; // include snout + tail
-    const sy1 = sy + 2, sy2 = sy + 28;
+    const sy1 = sy, sy2 = sy + 28;
     if (!(px2 < sx1 || px1 > sx2 || py2 < sy1 || py1 > sy2)) return true;
   }
+
+  return false;
+}
+
+function checkWalkCollision() {
+  if (!landSection) return false;
+  const px1 = penguin.x + 6, py1 = penguin.y + 6;
+  const px2 = penguin.x + PENGUIN_W - 6, py2 = penguin.y + PENGUIN_H - 6;
+  const offX = landSection.scrollX;
+
+  // Check each obstacle
+  for (const obs of landSection.obstacles) {
+    const ox = obs.x - offX;
+    if (ox > W + 50 || ox + (obs.w || 0) < -50) continue;
+
+    if (obs.type === 'cube') {
+      // Solid rectangle collision
+      const cubeLeft = ox, cubeRight = ox + obs.w;
+      const cubeTop = obs.y, cubeBot = obs.y + obs.h;
+      if (!(px2 < cubeLeft || px1 > cubeRight || py2 < cubeTop || py1 > cubeBot)) {
+        // Determine if landing on top
+        if (penguin.vy >= 0 && py2 - penguin.vy <= cubeTop + 4) {
+          penguin.y = cubeTop - PENGUIN_H + 6;
+          penguin.vy = 0;
+          penguin.onGround = true;
+          return false; // not death, landed on it
+        }
+        return true; // hit side or bottom
+      }
+    } else if (obs.type === 'gap') {
+      // If penguin overlaps gap and is at ground level
+      if (px2 > ox && px1 < ox + obs.w && py2 >= GROUND_Y - 2) {
+        return true; // fell in
+      }
+    } else if (obs.type === 'mound') {
+      // Triangle collision - approximate with point-in-triangle for penguin bottom center
+      const mx = ox + obs.w / 2, my = GROUND_Y - obs.h;
+      const bcx = (px1 + px2) / 2;
+      if (pointInTriangle(bcx, py2, ox, GROUND_Y, mx, my, ox + obs.w, GROUND_Y)) {
+        // Landing on top of mound
+        if (penguin.vy >= 0) {
+          // Calculate slope height at penguin's x
+          const rel = (bcx - ox) / obs.w;
+          const surfY = GROUND_Y - obs.h * (rel < 0.5 ? rel * 2 : (1 - rel) * 2);
+          penguin.y = surfY - PENGUIN_H + 6;
+          penguin.vy = 0;
+          penguin.onGround = true;
+          return false;
+        }
+        return true;
+      }
+    }
+  }
+
+  // Off the bottom of screen
+  if (py2 > H) return true;
 
   return false;
 }
@@ -700,8 +1187,16 @@ function handleInput() {
     state = 'playing';
     initGame();
   } else if (state === 'playing') {
-    penguin.vy = FLAP_VEL;
-    playFlap();
+    if (mode === 'swim') {
+      penguin.vy = FLAP_VEL;
+      playFlap();
+    } else if (mode === 'walk') {
+      if (penguin.onGround) {
+        penguin.vy = WALK_JUMP_VEL;
+        penguin.onGround = false;
+        playJump();
+      }
+    }
   } else if (state === 'dead' && deathTimer > 60) {
     state = 'playing';
     initGame();
@@ -718,134 +1213,311 @@ canvas.addEventListener('touchstart', e => { e.preventDefault(); handleInput(); 
 function gameLoop() {
   requestAnimationFrame(gameLoop);
   frameCount++;
-  bgOffset += (state === 'playing') ? PIPE_SPEED : 0.5;
 
-  // Draw background
-  drawBackground(bgOffset);
+  if (state === 'playing' && mode === 'swim') {
+    bgOffset += PIPE_SPEED;
+    swimFrames++;
+  } else if (state === 'idle') {
+    bgOffset += 0.5;
+  }
 
-  if (state === 'playing') {
-    // Spawn pipes
-    nextPipeIn--;
-    if (nextPipeIn <= 0) spawnObstacle();
+  // ── SWIM MODE ────────────────────────────────────────────────────────────
+  if (mode === 'swim' || mode === 'transition_up') {
+    drawBackground(bgOffset);
 
-    // Physics
-    penguin.vy += GRAVITY;
-    penguin.y  += penguin.vy;
-    penguin.angle = Math.max(-0.5, Math.min(1.0, penguin.vy * 0.07));
-    penguin.wobble = Math.sin(frameCount * 0.25) * 1.5;
+    if (state === 'playing' && mode === 'swim') {
+      // Check if it's time for a walk section
+      const wallPending = pipes.some(p => p.isWall);
+      // Stop spawning obstacles early to leave a clear gap before the wall
+      const stopSpawning = swimFrames >= SWIM_BEFORE_WALK - 40;
+      if (swimFrames >= SWIM_BEFORE_WALK && !wallPending) {
+        // Only spawn wall once all normal pipes have cleared past half screen
+        const lastPipeX = pipes.reduce((mx, p) => Math.max(mx, p.x + OBS_W), 0);
+        if (lastPipeX < W / 2) {
+          pipes.push({
+            x: W + W / 2, topH: 100, botY: 100, botH: H - 100, gap: 0,
+            passed: false, isWall: true,
+            iceSpikes: [], rockSpikes: []
+          });
+          nextPipeIn = 999;
+        }
+      }
 
-    // Move and cull pipes
-    pipes = pipes.filter(p => p.x + 70 > 0);
-    for (const p of pipes) {
-      p.x -= PIPE_SPEED;
-      if (!p.passed && p.x + 70 < PENGUIN_X) {
-        p.passed = true;
+      if (!stopSpawning && !wallPending) {
+        nextPipeIn--;
+        if (nextPipeIn <= 0) spawnObstacle();
+      }
+
+      // Physics
+      penguin.vy += GRAVITY;
+      penguin.y  += penguin.vy;
+      penguin.angle = Math.max(-0.5, Math.min(1.0, penguin.vy * 0.07));
+      penguin.wobble = Math.sin(frameCount * 0.25) * 1.5;
+
+      // Move and cull pipes
+      pipes = pipes.filter(p => p.x + 70 > 0 || p.isWall);
+      for (const p of pipes) {
+        p.x -= PIPE_SPEED;
+        if (!p.passed && p.x + 70 < PENGUIN_X) {
+          p.passed = true;
+        }
+        // Check if penguin reaches the wall hole
+        if (p.isWall && p.x <= PENGUIN_X + PENGUIN_W && penguin.y + PENGUIN_H < 100) {
+          mode = 'transition_up';
+          transTimer = 0;
+          pipes = pipes.filter(pp => !pp.isWall);
+        }
+      }
+
+      // Move and cull fish
+      fish = fish.filter(f => f.x + 30 > 0 && !f.eaten);
+      for (const f of fish) {
+        f.x -= PIPE_SPEED;
+        f.anim++;
+        if (!f.eaten &&
+            penguin.x + PENGUIN_W > f.x - 14 && penguin.x < f.x + 6 &&
+            penguin.y + PENGUIN_H > f.y - 8  && penguin.y < f.y + 4) {
+          f.eaten = true;
+          score += 5;
+          playMunch();
+        }
+      }
+
+      // Move and cull seals
+      seals = seals.filter(s => s.x + SEAL_W + 10 > 0);
+      for (const s of seals) {
+        s.x -= PIPE_SPEED;
+        s.anim++;
+        s.bob = Math.sin(s.anim * 0.04) * 15;
+        const sealCenterY = s.y + s.bob + 14;
+        const penguinCenterY = penguin.y + PENGUIN_H / 2;
+        const dy = penguinCenterY - sealCenterY;
+        s.y += dy * 0.015;
+        if (s.x > PENGUIN_X + 40) s.x -= 0.4;
+        // Snap angle: up, down, or straight based on penguin position
+        const threshold = 30;
+        let targetAngle = 0;
+        if (dy > threshold) targetAngle = -0.35;       // penguin below -> angle down
+        else if (dy < -threshold) targetAngle = 0.35; // penguin above -> angle up
+        s.angle = (s.angle || 0) + (targetAngle - (s.angle || 0)) * 0.08;
+      }
+
+      // Spawn squids
+      if (Math.random() < 0.003) {
+        const sqX = 80 + Math.random() * (W - 160);
+        const minY = H * 0.55;
+        squids.push({ x: sqX, y: H + 30, minY: minY + Math.random() * (H * 0.2), anim: 0, eaten: false });
+      }
+      squids = squids.filter(s => !s.eaten && s.y > -40);
+      for (const s of squids) {
+        s.anim++;
+        if (s.y > s.minY) s.y -= 0.7; else s.y += 0.4;
+        s.x -= PIPE_SPEED * 0.3;
+        if (!s.eaten &&
+            penguin.x + PENGUIN_W > s.x - 10 && penguin.x < s.x + 12 &&
+            penguin.y + PENGUIN_H > s.y - 10 && penguin.y < s.y + 28) {
+          s.eaten = true;
+          score += 15;
+          playMunch();
+        }
+      }
+
+      // Score
+      score += 0.055;
+      document.getElementById('score-display').textContent = Math.floor(score);
+
+      // Collision
+      if (checkCollision()) {
+        state = 'dead';
+        deathTimer = 0;
+        if (score > bestScore) bestScore = score;
+        document.getElementById('best-display').textContent = 'BEST: ' + Math.floor(bestScore);
+        playDead();
       }
     }
 
-    // Move and cull fish
-    fish = fish.filter(f => f.x + 30 > 0 && !f.eaten);
-    for (const f of fish) {
-      f.x -= PIPE_SPEED;
-      f.anim++;
-      // Check eat
-      if (!f.eaten &&
-          penguin.x + PENGUIN_W > f.x - 14 && penguin.x < f.x + 6 &&
-          penguin.y + PENGUIN_H > f.y - 8  && penguin.y < f.y + 4) {
-        f.eaten = true;
-        score += 5;
-        playMunch();
-      }
-    }
-
-    // Move and cull seals
-    seals = seals.filter(s => s.x + SEAL_W + 10 > 0);
-    for (const s of seals) {
-      s.x -= PIPE_SPEED;
-      s.anim++;
-    }
-
-    // Spawn squids (rare: ~0.3% per frame, so roughly one every ~5-6 seconds)
-    if (Math.random() < 0.003) {
-      const sqX = 80 + Math.random() * (W - 160); // random x across the screen
-      const minY = H * 0.55; // won't rise above 55% of screen height (stays in lower half)
-      squids.push({ x: sqX, y: H + 30, minY: minY + Math.random() * (H * 0.2), anim: 0, eaten: false });
-    }
-
-    // Move and cull squids
-    squids = squids.filter(s => !s.eaten && s.y > -40);
-    for (const s of squids) {
-      s.anim++;
-      // Rise slowly
-      if (s.y > s.minY) {
-        s.y -= 0.7;
+    // Transition up animation
+    if (mode === 'transition_up') {
+      transTimer++;
+      if (transTimer < 20) {
+        // Phase 1: swim up quickly
+        penguin.y -= 5;
+        penguin.angle = -0.8;
+      } else if (transTimer < 45) {
+        // Phase 2: leap out of water with an arc
+        penguin.y -= 6;
+        penguin.x += 1.5;
+        penguin.angle = -1.0 + (transTimer - 20) * 0.06;
+      } else if (transTimer < 65) {
+        // Phase 3: arc down onto ice
+        penguin.y += 2;
+        penguin.x += 0.5;
+        penguin.angle = (transTimer - 45) * 0.04;
+      } else if (transTimer < 80) {
+        // Phase 4: screen brightens, fade to walk
+        const fade = (transTimer - 65) / 15;
+        ctx.fillStyle = `rgba(255,255,255,${fade * 0.8})`;
+        ctx.fillRect(0, 0, W, H);
       } else {
-        // Reached max height, start sinking back
-        s.y += 0.4;
+        // Switch to walk mode
+        mode = 'walk';
+        landSection = generateWalkSection();
+        // Ensure no obstacles near the start
+        landSection.obstacles = landSection.obstacles.filter(o => o.x > 350);
+        penguin.x = PENGUIN_X;
+        penguin.y = GROUND_Y - PENGUIN_H + 6;
+        penguin.vy = 0;
+        penguin.onGround = true;
+        pipes = []; fish = []; seals = []; squids = [];
+        playSplash();
       }
-      s.x -= PIPE_SPEED * 0.3; // drift left slowly with current
+      // Draw brightening light from above
+      const alpha = Math.min(1, transTimer / 30);
+      ctx.fillStyle = `rgba(255,255,230,${alpha * 0.4})`;
+      ctx.fillRect(0, 0, W, H * 0.4);
+    }
 
-      // Check eat
-      if (!s.eaten &&
-          penguin.x + PENGUIN_W > s.x - 10 && penguin.x < s.x + 12 &&
-          penguin.y + PENGUIN_H > s.y - 10 && penguin.y < s.y + 28) {
-        s.eaten = true;
-        score += 15;
-        playMunch();
+    if (state === 'dead') {
+      deathTimer++;
+      penguin.vy = Math.min(penguin.vy + GRAVITY, 8);
+      penguin.y  = Math.min(penguin.y + penguin.vy, H - PENGUIN_H);
+      penguin.angle = 1.4;
+    }
+
+    // Draw swim entities
+    for (const p of pipes) {
+      if (p.isWall) {
+        drawIceWall(p.x);
+      } else {
+        drawIceberg(p.x, p.topH, p.iceSpikes);
+        drawRock(p.x, p.botY, p.botH, p.rockSpikes);
+      }
+    }
+    for (const s of seals) drawSeal(s.x, s.y + (s.bob || 0), s.anim, s.angle || 0);
+    for (const s of squids) { if (!s.eaten) drawSquid(s.x, s.y, s.anim); }
+    for (const f of fish) drawFish(f.x, f.y, f.anim);
+
+    if (state !== 'idle') {
+      drawPenguin(penguin.x, penguin.y, penguin.angle, penguin.wobble);
+    }
+
+  // ── WALK MODE ────────────────────────────────────────────────────────────
+  } else if (mode === 'walk' || mode === 'transition_down') {
+    drawWalkBackground();
+
+    if (state === 'playing' && mode === 'walk' && landSection) {
+      // Scroll the section
+      landSection.scrollX += PIPE_SPEED;
+      bgOffset += PIPE_SPEED * 0.3;
+
+      // Walk physics
+      penguin.vy += WALK_GRAVITY;
+      penguin.y += penguin.vy;
+      penguin.onGround = false;
+
+      // Ground collision
+      if (penguin.y + PENGUIN_H - 6 >= GROUND_Y) {
+        // Check if over a gap
+        let overGap = false;
+        for (const obs of landSection.obstacles) {
+          if (obs.type === 'gap') {
+            const ox = obs.x - landSection.scrollX;
+            if (penguin.x + PENGUIN_W - 6 > ox + 4 && penguin.x + 6 < ox + obs.w - 4) {
+              overGap = true;
+              break;
+            }
+          }
+        }
+        if (!overGap) {
+          penguin.y = GROUND_Y - PENGUIN_H + 6;
+          penguin.vy = 0;
+          penguin.onGround = true;
+        }
+      }
+
+      // Obstacle collision
+      if (checkWalkCollision()) {
+        state = 'dead';
+        deathTimer = 0;
+        if (score > bestScore) bestScore = score;
+        document.getElementById('best-display').textContent = 'BEST: ' + Math.floor(bestScore);
+        playDead();
+      }
+
+      // Check if reached end of section (exit hole)
+      if (landSection.scrollX >= landSection.totalWidth - W / 2) {
+        mode = 'transition_down';
+        transTimer = 0;
+        playSplash();
+      }
+
+      // Score
+      score += 0.055;
+      document.getElementById('score-display').textContent = Math.floor(score);
+    }
+
+    // Transition down animation
+    if (mode === 'transition_down') {
+      transTimer++;
+      if (transTimer < 30) {
+        // Penguin walks toward hole then dives
+        penguin.x += 2;
+        if (transTimer > 15) {
+          penguin.y += 5;
+        }
+      } else {
+        // Back to swim
+        mode = 'swim';
+        swimFrames = 0;
+        penguin.x = PENGUIN_X;
+        penguin.y = H / 2;
+        penguin.vy = 0;
+        penguin.angle = 0;
+        landSection = null;
+        nextPipeIn = 60;
       }
     }
 
-    // Score (time-based)
-    score += 0.055;
-    document.getElementById('score-display').textContent = Math.floor(score);
+    if (state === 'dead') {
+      deathTimer++;
+      penguin.vy = Math.min(penguin.vy + WALK_GRAVITY, 8);
+      penguin.y  = Math.min(penguin.y + penguin.vy, H);
+    }
 
-    // Collision
-    if (checkCollision()) {
-      state = 'dead';
-      deathTimer = 0;
-      if (score > bestScore) bestScore = score;
-      document.getElementById('best-display').textContent = 'BEST: ' + Math.floor(bestScore);
-      playDead();
+    // Draw ground (with gaps cut out)
+    if (landSection) {
+      drawIceGround(landSection.scrollX);
+
+      // Draw gaps over the ground
+      for (const obs of landSection.obstacles) {
+        if (obs.type === 'gap') drawLandObstacle(obs, landSection.scrollX);
+      }
+
+      // Draw other obstacles
+      for (const obs of landSection.obstacles) {
+        if (obs.type !== 'gap') drawLandObstacle(obs, landSection.scrollX);
+      }
+
+      // Draw exit hole and fishing penguin
+      const holeScreenX = landSection.holeX - landSection.scrollX;
+      const npcScreenX = landSection.npcX - landSection.scrollX;
+      if (holeScreenX > -50 && holeScreenX < W + 50) {
+        drawExitHole(holeScreenX);
+      }
+      if (npcScreenX > -50 && npcScreenX < W + 50) {
+        drawFishingPenguin(npcScreenX + 50, GROUND_Y - 16);
+      }
+    }
+
+    // Draw walking penguin
+    if (state !== 'idle') {
+      drawWalkPenguin(penguin.x, penguin.y, penguin.onGround);
     }
   }
 
-  if (state === 'dead') {
-    deathTimer++;
-    // Keep penguin falling a bit
-    penguin.vy = Math.min(penguin.vy + GRAVITY, 8);
-    penguin.y  = Math.min(penguin.y + penguin.vy, H - PENGUIN_H);
-    penguin.angle = 1.4;
-  }
-
-  // Draw pipes
-  for (const p of pipes) {
-    drawIceberg(p.x, p.topH, p.iceSpikes);
-    drawRock(p.x, p.botY, p.botH, p.rockSpikes);
-  }
-
-  // Draw seals
-  for (const s of seals) {
-    drawSeal(s.x, s.y, s.anim);
-  }
-
-  // Draw squids
-  for (const s of squids) {
-    if (!s.eaten) drawSquid(s.x, s.y, s.anim);
-  }
-
-  // Draw fish
-  for (const f of fish) {
-    drawFish(f.x, f.y, f.anim);
-  }
-
-  // Draw penguin
-  if (state !== 'idle') {
-    drawPenguin(penguin.x, penguin.y, penguin.angle, penguin.wobble);
-  }
-
-  // Overlays
+  // Overlays (both modes)
   if (state === 'idle') drawIdle();
-  if (state === 'dead')  drawDead();
+  if (state === 'dead') drawDead();
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
