@@ -166,7 +166,8 @@ function initGame() {
   swimFrames = 0;
   landSection = null;
   transTimer = 0;
-  document.getElementById('score-display').textContent = '0';
+  document.getElementById('score-display').textContent = demoMode ? 'Demo Mode' : '0';
+  document.getElementById('best-display').textContent = demoMode ? '' : 'BEST: ' + Math.floor(bestScore);
 }
 
 // ── Pipe/obstacle generation ──────────────────────────────────────────────────
@@ -665,6 +666,20 @@ function drawSquid(x, y, anim) {
   ctx.fillText('+15', sx + 1, y - 16);
 }
 
+// ── Pre-generated terrain teeth (generated once, scrolled by offset) ──────────
+const TEETH_LEN = 600; // enough to tile seamlessly
+const iceTeeth = [];
+const rockTeeth = [];
+(function() {
+  // Simple seeded pseudo-random for consistent terrain
+  let s = 12345;
+  function srand() { s = (s * 16807 + 0) % 2147483647; return (s & 0xffff) / 0xffff; }
+  for (let i = 0; i < TEETH_LEN; i++) {
+    iceTeeth.push(4 + Math.floor(srand() * 12));
+    rockTeeth.push(4 + Math.floor(srand() * 14));
+  }
+})();
+
 // ── Background drawing ────────────────────────────────────────────────────────
 function drawBackground(offset) {
   // Deep ocean gradient
@@ -701,12 +716,51 @@ function drawBackground(offset) {
     ctx.fillStyle = 'rgba(100,180,255,0.15)';
   });
 
-  // Seaweed
-  ctx.fillStyle = 'rgba(0,150,80,0.25)';
+  // ── Ice ceiling ──────────────────────────────────────────────────────────
+  const iceH = 18;
+  const TOOTH_W = 6;
+  // scrollIdx = which tooth index we've scrolled to; subPx = pixel offset within that tooth
+  const scrollIdx = Math.floor(offset / TOOTH_W);
+  const subPx = offset % TOOTH_W;
+  px(0, 0, W, iceH - 6, '#8abcd0');
+  // Rough jagged bottom edge — scrolls smoothly
+  for (let ix = -TOOTH_W; ix < W + TOOTH_W; ix += TOOTH_W) {
+    const ti = ((Math.floor(ix / TOOTH_W) + scrollIdx) % TEETH_LEN + TEETH_LEN) % TEETH_LEN;
+    const jag = iceTeeth[ti];
+    const drawX = ix - subPx;
+    px(drawX, iceH - 6, TOOTH_W, jag, '#8abcd0');
+    if (ti % 3 === 0) px(drawX + 2, iceH - 4, TOOTH_W - 2, jag + 2, '#72a8bc');
+  }
+  // Highlight line
+  px(0, 0, W, 3, '#a0d4e8');
+  // Subtle cracks that scroll
+  for (let cx = 0; cx < W + 80; cx += 80) {
+    const crackX = cx - (offset * 0.5) % 80;
+    if (crackX >= 0 && crackX < W) px(crackX, 4, 2, iceH - 8, 'rgba(110,170,190,0.5)');
+  }
+
+  // ── Rock floor ──────────────────────────────────────────────────────────
+  const rockY = H - 20;
+  px(0, rockY + 8, W, H - rockY - 8, '#4a4a4a');
+  px(0, rockY + 8, W, 3, '#5a5a5a');
+  // Rough jagged top edge — scrolls smoothly
+  for (let rx = -TOOTH_W; rx < W + TOOTH_W; rx += TOOTH_W) {
+    const ri = ((Math.floor(rx / TOOTH_W) + scrollIdx) % TEETH_LEN + TEETH_LEN) % TEETH_LEN;
+    const jag = rockTeeth[ri];
+    const drawX = rx - subPx;
+    px(drawX, rockY + 8 - jag, TOOTH_W, jag, '#4a4a4a');
+    if (ri % 3 === 0) px(drawX, rockY + 8 - jag, 3, jag, '#555');
+    if (ri % 7 === 0) px(drawX + 1, rockY + 8 - jag, 2, 3, '#6a6a6a');
+  }
+  // Dark base
+  px(0, H - 6, W, 6, '#3a3a3a');
+
+  // Seaweed (on the rock, scrolls)
   [70, 180, 320, 430].forEach((sx, i) => {
+    const swx = ((sx - offset * 0.6) % 360 + 360) % 360 + 20;
     for (let seg = 0; seg < 5; seg++) {
       const wave = Math.sin((offset * 0.02 + i + seg) * 0.8) * 6;
-      px(sx + wave, H - 40 - seg * 18, 8, 16, `rgba(0,${130 + seg * 8},${50 + seg * 5},0.25)`);
+      px(swx + wave, rockY - 10 - seg * 16, 8, 16, `rgba(0,${130 + seg * 8},${50 + seg * 5},0.25)`);
     }
   });
 }
@@ -1183,6 +1237,12 @@ function checkWalkCollision() {
 // ── Input ─────────────────────────────────────────────────────────────────────
 function handleInput() {
   getAudio(); // wake audio context
+  // Interrupt demo mode — go back to idle/title
+  if (demoMode) {
+    stopDemo();
+    return;
+  }
+  idleTimer = 0; // reset demo timer on any input
   if (state === 'idle') {
     state = 'playing';
     initGame();
@@ -1213,6 +1273,24 @@ canvas.addEventListener('touchstart', e => { e.preventDefault(); handleInput(); 
 function gameLoop() {
   requestAnimationFrame(gameLoop);
   frameCount++;
+
+  // Demo mode timer (idle or lingering on death screen)
+  if (!demoMode && (state === 'idle' || (state === 'dead' && deathTimer > 60))) {
+    idleTimer++;
+    if (idleTimer >= 60 * 6) { // 6 seconds at 60fps
+      startDemo();
+    }
+  }
+
+  // Demo AI
+  if (demoMode && state === 'playing') {
+    demoAI();
+  }
+  // Demo: restart after brief pause on death
+  if (demoMode && state === 'dead' && deathTimer > 30) {
+    state = 'playing';
+    initGame();
+  }
 
   if (state === 'playing' && mode === 'swim') {
     bgOffset += PIPE_SPEED;
@@ -1324,14 +1402,16 @@ function gameLoop() {
 
       // Score
       score += 0.055;
-      document.getElementById('score-display').textContent = Math.floor(score);
+      if (!demoMode) document.getElementById('score-display').textContent = Math.floor(score);
 
       // Collision
       if (checkCollision()) {
         state = 'dead';
         deathTimer = 0;
-        if (score > bestScore) bestScore = score;
-        document.getElementById('best-display').textContent = 'BEST: ' + Math.floor(bestScore);
+        if (!demoMode && score > bestScore) {
+          bestScore = score;
+          document.getElementById('best-display').textContent = 'BEST: ' + Math.floor(bestScore);
+        }
         playDead();
       }
     }
@@ -1439,8 +1519,10 @@ function gameLoop() {
       if (checkWalkCollision()) {
         state = 'dead';
         deathTimer = 0;
-        if (score > bestScore) bestScore = score;
-        document.getElementById('best-display').textContent = 'BEST: ' + Math.floor(bestScore);
+        if (!demoMode && score > bestScore) {
+          bestScore = score;
+          document.getElementById('best-display').textContent = 'BEST: ' + Math.floor(bestScore);
+        }
         playDead();
       }
 
@@ -1453,7 +1535,7 @@ function gameLoop() {
 
       // Score
       score += 0.055;
-      document.getElementById('score-display').textContent = Math.floor(score);
+      if (!demoMode) document.getElementById('score-display').textContent = Math.floor(score);
     }
 
     // Transition down animation
@@ -1516,8 +1598,119 @@ function gameLoop() {
   }
 
   // Overlays (both modes)
-  if (state === 'idle') drawIdle();
-  if (state === 'dead') drawDead();
+  if (state === 'idle' && !demoMode) drawIdle();
+  if (state === 'dead' && !demoMode) drawDead();
+
+  // Demo mode overlay
+  if (demoMode) {
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 14px monospace';
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText('DEMO - TAP or SPACE to play', W / 2, H - 20);
+  }
+}
+
+// ── Demo mode (AI plays itself) ───────────────────────────────────────────────
+let idleTimer = 0;
+let demoMode = false;
+
+function startDemo() {
+  demoMode = true;
+  state = 'playing';
+  initGame();
+  document.getElementById('score-display').textContent = 'Demo Mode';
+  document.getElementById('best-display').textContent = '';
+}
+
+function stopDemo() {
+  demoMode = false;
+  state = 'idle';
+  idleTimer = 0;
+  initGame();
+  document.getElementById('score-display').textContent = '';
+  document.getElementById('best-display').textContent  = '';
+}
+
+let demoFlapCooldown = 0;
+
+function demoAI() {
+  if (mode === 'swim') {
+    demoFlapCooldown--;
+    const penguinMidY = penguin.y + PENGUIN_H / 2;
+    let targetY = H * 0.45;
+
+    // Check for ice wall — swim to top
+    const wall = pipes.find(p => p.isWall);
+    if (wall && wall.x < W + 100) {
+      targetY = 40;
+    }
+
+    // Find nearest pipe ahead — look at the next one we haven't passed
+    let nearestPipe = null;
+    let nearestDist = Infinity;
+    for (const p of pipes) {
+      if (p.isWall) continue;
+      const dist = p.x + OBS_W - penguin.x;
+      if (dist > -10 && dist < nearestDist) {
+        nearestDist = dist;
+        nearestPipe = p;
+      }
+    }
+    if (nearestPipe && !wall) {
+      // Aim for lower third of the gap to avoid top spikes
+      targetY = nearestPipe.topH + nearestPipe.gap * 0.65;
+    }
+
+    // Avoid seals
+    for (const s of seals) {
+      const dist = s.x - penguin.x;
+      if (dist > -30 && dist < 180) {
+        const sealY = s.y + (s.bob || 0) + 14;
+        if (Math.abs(penguinMidY - sealY) < 70) {
+          if (penguinMidY < sealY) targetY = Math.min(targetY, sealY - 80);
+          else targetY = Math.max(targetY, sealY + 80);
+        }
+      }
+    }
+
+    targetY = Math.max(50, Math.min(H - 70, targetY));
+
+    // Predict where penguin will be in ~8 frames
+    const futureY = penguinMidY + penguin.vy * 8 + GRAVITY * 8 * 8 / 2;
+
+    // Flap decision: only when cooldown is done
+    if (demoFlapCooldown <= 0) {
+      let shouldFlap = false;
+
+      // Flap if we'll be too far below target soon
+      if (futureY > targetY + 30) shouldFlap = true;
+      // Flap if already below and velocity is downward
+      if (penguinMidY > targetY + 15 && penguin.vy > 1) shouldFlap = true;
+      // Emergency: about to hit bottom
+      if (penguinMidY > H - 100 && penguin.vy > 0) shouldFlap = true;
+      // Don't flap if well above target
+      if (penguinMidY < targetY - 20) shouldFlap = false;
+      // Don't flap if rising fast and above target
+      if (penguin.vy < -3 && penguinMidY < targetY + 10) shouldFlap = false;
+
+      if (shouldFlap) {
+        penguin.vy = FLAP_VEL;
+        demoFlapCooldown = 8; // minimum frames between flaps
+      }
+    }
+  } else if (mode === 'walk') {
+    if (!penguin.onGround || !landSection) return;
+
+    for (const obs of landSection.obstacles) {
+      const ox = obs.x - landSection.scrollX;
+      const dist = ox - penguin.x;
+      if (dist > 0 && dist < 110) {
+        penguin.vy = WALK_JUMP_VEL;
+        penguin.onGround = false;
+        break;
+      }
+    }
+  }
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
