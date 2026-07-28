@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0a0a1a">
+  <title>One in a Million</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎰</text></svg>">
+</head>
+<body>
+  <!-- Collection View -->
+  <div id="view-collection" class="view active">
+    <header class="collection-header">
+      <h1 class="logo">One in a <span class="accent">Million</span></h1>
+      <div class="stats-banner">
+        <div class="stat">
+          <span class="stat-value" id="stat-pulls">0</span>
+          <span class="stat-label">Pulls</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value" id="stat-unique">0</span>
+          <span class="stat-label">Unique</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value" id="stat-best">—</span>
+          <span class="stat-label">Best</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value" id="stat-score">0</span>
+          <span class="stat-label">Score</span>
+        </div>
+      </div>
+      <div class="collection-controls">
+        <div class="sort-controls">
+          <label>Sort:</label>
+          <select id="sort-select">
+            <option value="score">Score</option>
+            <option value="number">Number</option>
+            <option value="date">Recent</option>
+            <option value="tier">Tier</option>
+          </select>
+        </div>
+        <div class="filter-controls">
+          <label>Filter:</label>
+          <select id="filter-select">
+            <option value="all">All</option>
+            <option value="favourites">Favourites</option>
+            <option value="SSS">SSS</option>
+            <option value="SS">SS</option>
+            <option value="S">S</option>
+            <option value="A">A</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+          </select>
+        </div>
+      </div>
+    </header>
+    <div id="collection-grid" class="collection-grid"></div>
+    <div id="empty-collection" class="empty-collection">
+      <p>No cards yet!</p>
+      <p class="hint">Press PULL or hit Space to start</p>
+    </div>
+  </div>
+
+  <!-- Spinner View -->
+  <div id="view-spinner" class="view">
+    <div class="spinner-container">
+      <div class="spinner-window">
+        <div class="spinner-reel" id="spinner-reel"></div>
+        <div class="spinner-mask spinner-mask-top"></div>
+        <div class="spinner-mask spinner-mask-bottom"></div>
+        <div class="spinner-viewport"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Card Reveal View -->
+  <div id="view-card-reveal" class="view">
+    <div class="card-reveal-container">
+      <div id="reveal-card" class="reveal-card"></div>
+      <div class="reveal-actions">
+        <button id="btn-pull-again" class="btn btn-pull">PULL AGAIN</button>
+        <button id="btn-back-collection" class="btn btn-secondary">Collection</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom Nav / Pull Button -->
+  <div id="bottom-bar" class="bottom-bar">
+    <button id="btn-collection" class="nav-btn active" title="Collection">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="7" height="7" rx="1"/>
+        <rect x="14" y="3" width="7" height="7" rx="1"/>
+        <rect x="3" y="14" width="7" height="7" rx="1"/>
+        <rect x="14" y="14" width="7" height="7" rx="1"/>
+      </svg>
+      <span>Collection</span>
+    </button>
+    <button id="btn-pull" class="pull-btn">PULL</button>
+    <button id="btn-mute" class="nav-btn" title="Toggle Sound">
+      <svg id="icon-sound-on" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+        <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+        <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+      </svg>
+      <svg id="icon-sound-off" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+        <line x1="23" y1="9" x2="17" y2="15"/>
+        <line x1="17" y1="9" x2="23" y2="15"/>
+      </svg>
+      <span>Sound</span>
+    </button>
+  </div>
+
+  <!-- Dev Mode Overlay -->
+  <div id="dev-overlay" class="dev-overlay hidden">
+    <div class="dev-input-container">
+      <label>Dev Mode — Enter number (0–1,000,000):</label>
+      <input type="number" id="dev-input" min="0" max="1000000" placeholder="42">
+      <button id="dev-submit" class="btn btn-small">Set</button>
+      <button id="dev-close" class="btn btn-small btn-secondary">Close</button>
+    </div>
+  </div>
+  <div id="dev-badge" class="dev-badge hidden">DEV</div>
+
+  <script src="js/numbers.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/spinner.js"></script>
+  <script src="js/cards.js"></script>
+  <script src="js/collection.js"></script>
+  <script src="js/dev.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

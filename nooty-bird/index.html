@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Nooty Bird</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a1628;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    overflow: hidden;
+    font-family: monospace;
+    touch-action: manipulation;
+  }
+  canvas {
+    display: block;
+    image-rendering: pixelated;
+    cursor: pointer;
+  }
+  #ui {
+    position: fixed;
+    top: 12px;
+    left: 0; right: 0;
+    text-align: center;
+    pointer-events: none;
+    color: #fff;
+    text-shadow: 2px 2px 0 #000;
+  }
+  #score-display {
+    font-size: 28px;
+    font-weight: bold;
+    letter-spacing: 2px;
+  }
+  #best-display {
+    font-size: 14px;
+    opacity: 0.7;
+    margin-top: 2px;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="score-display">0</div>
+  <div id="best-display">BEST: 0</div>
+</div>
+<script>
+// ── Canvas setup ──────────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = 480, H = 640;
+canvas.width = W; canvas.height = H;
+
+// Scale canvas to fit screen
+function resize() {
+  const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width  = (W * scale) + 'px';
+  canvas.style.height = (H * scale) + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Audio context (lazy init on first interaction) ────────────────────────────
+let audioCtx = null;
+function getAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function playMunch() {
+  try {
+    const ac = getAudio();
+    // Cute descending blip
+    [0, 0.06, 0.12].forEach((t, i) => {
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.connect(gain); gain.connect(ac.destination);
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(880 - i * 120, ac.currentTime + t);
+      osc.frequency.exponentialRampToValueAtTime(440 - i * 60, ac.currentTime + t + 0.06);
+      gain.gain.setValueAtTime(0.18, ac.currentTime + t);
+      gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + t + 0.08);
+      osc.start(ac.currentTime + t);
+      osc.stop(ac.currentTime + t + 0.1);
+    });
+  } catch(e) {}
+}
+
+function playFlap() {
+  try {
+    const ac = getAudio();
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain); gain.connect(ac.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(300, ac.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(500, ac.currentTime + 0.08);
+    gain.gain.setValueAtTime(0.12, ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.12);
+    osc.start(ac.currentTime);
+    osc.stop(ac.currentTime + 0.15);
+  } catch(e) {}
+}
+
+function playDead() {
+  try {
+    const ac = getAudio();
+    [0, 0.1, 0.22].forEach((t, i) => {
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.connect(gain); gain.connect(ac.destination);
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(300 - i * 60, ac.currentTime + t);
+      osc.frequency.exponentialRampToValueAtTime(80, ac.currentTime + t + 0.2);
+      gain.gain.setValueAtTime(0.2, ac.currentTime + t);
+      gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + t + 0.22);
+      osc.start(ac.currentTime + t);
+      osc.stop(ac.currentTime + t + 0.25);
+    });
+  } catch(e) {}
+}
+
+// ── Game constants ────────────────────────────────────────────────────────────
+const GRAVITY     = 0.42;
+const FLAP_VEL    = -7.0;
+const PIPE_SPEED  = 3.8;
+const PIPE_GAP_MIN = 147; // min vertical gap between iceberg and rock
+const PIPE_GAP_MAX = 210; // max vertical gap
+const PIPE_INTERVAL_MIN = 55; // min frames between pipes
+const PIPE_INTERVAL_MAX = 95; // max frames between pipes
+const PENGUIN_X   = 90;
+const PENGUIN_W   = 30;
+const PENGUIN_H   = 34;
+
+// ── Game state ────────────────────────────────────────────────────────────────
+let state = 'idle'; // idle | playing | dead
+let penguin, pipes, fish, seals, squids, score, bestScore, frameCount, bgOffset, deathTimer;
+bestScore = 0;
+
+function initGame() {
+  penguin = { x: PENGUIN_X, y: H / 2, vy: 0, angle: 0, wobble: 0 };
+  pipes = [];
+  fish = [];
+  seals = [];
+  squids = [];
+  score = 0;
+  frameCount = 0;
+  bgOffset = 0;
+  deathTimer = 0;
+  nextPipeIn = 30; // first pipe comes quickly
+  document.getElementById('score-display').textContent = '0';
+}
+
+// ── Pipe/obstacle generation ──────────────────────────────────────────────────
+const OBS_W = 70; // obstacle width
+
+function makeSpikes(count) {
+  const spikes = [];
+  for (let i = 0; i < count; i++) {
+    const sw = 6 + Math.random() * 14;
+    // Clamp offset so spike base stays fully within obstacle width
+    const margin = (sw / 2) / OBS_W;
+    const rawOff = (i / count) + (Math.random() * 0.08 - 0.04);
+    const offset = Math.max(margin, Math.min(1 - margin, rawOff));
+    spikes.push({
+      offset,
+      width: sw,
+      height: 12 + Math.random() * 35
+    });
+  }
+  return spikes;
+}
+
+let nextPipeIn = 0; // frames until next pipe
+
+function spawnPipe() {
+  const gap = PIPE_GAP_MIN + Math.random() * (PIPE_GAP_MAX - PIPE_GAP_MIN);
+  const minTop = 60, minBot = 60;
+  const topH = minTop + Math.random() * (H - gap - minTop - minBot);
+  const botY  = topH + gap;
+  const x     = W + 20;
+
+  pipes.push({
+    x, topH, botY, botH: H - botY, gap, passed: false,
+    iceSpikes: makeSpikes(4 + Math.floor(Math.random() * 4)),
+    rockSpikes: makeSpikes(4 + Math.floor(Math.random() * 4))
+  });
+
+  // Fish: appears in the middle of the gap, 50% chance
+  if (Math.random() < 0.5) {
+    fish.push({
+      x: x + 20,
+      y: topH + gap / 2,
+      eaten: false,
+      anim: 0
+    });
+  }
+
+  // Randomize next spawn interval
+  nextPipeIn = PIPE_INTERVAL_MIN + Math.floor(Math.random() * (PIPE_INTERVAL_MAX - PIPE_INTERVAL_MIN));
+}
+
+const SEAL_W = 90;
+const SEAL_H = 32;
+
+function spawnSeal() {
+  // Place seal at a random Y with margin from edges
+  const margin = 80;
+  const y = margin + Math.random() * (H - margin * 2 - SEAL_H);
+  seals.push({ x: W + 20, y, anim: 0 });
+
+  nextPipeIn = PIPE_INTERVAL_MIN + Math.floor(Math.random() * (PIPE_INTERVAL_MAX - PIPE_INTERVAL_MIN));
+}
+
+function spawnObstacle() {
+  if (Math.random() < 0.2) {
+    spawnSeal();
+  } else {
+    spawnPipe();
+  }
+}
+
+// ── Pixel art drawing helpers ─────────────────────────────────────────────────
+function px(x, y, w, h, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, w, h);
+}
+
+// Draw pixelated penguin (swimming rightward)
+function drawPenguin(x, y, angle, wobble) {
+  ctx.save();
+  ctx.translate(x + PENGUIN_W / 2, y + PENGUIN_H / 2);
+  ctx.rotate(angle);
+
+  const w = wobble;
+  const S = 0.78; // scale factor
+
+  // Body (elongated horizontal, black)
+  px(-20*S, -12*S+w, 36*S, 24*S, '#1a1a2e');
+  // Belly (white/cream, horizontal)
+  px(-14*S, -6*S+w, 24*S, 14*S, '#e8e8d0');
+  // Belly shine
+  px(-6*S, -4*S+w, 8*S, 6*S, '#f0f0e0');
+  // Head (right side, slightly forward)
+  px(14*S, -14*S+w, 14*S, 18*S, '#1a1a2e');
+  // Beak (pointing right)
+  px(26*S, -6*S+w, 8*S, 4*S, '#ff8c00');
+  // Eye (white)
+  px(20*S, -10*S+w, 4*S, 4*S, '#ffffff');
+  // Pupil
+  px(22*S, -9*S+w, 2*S, 2*S, '#000');
+  // Blush (pink, on cheek)
+  px(16*S, -2*S+w, 4*S, 3*S, '#ffb3c6');
+  // Tail (left side, small)
+  px(-24*S, -6*S+w, 6*S, 8*S, '#0d0d1a');
+  // Flippers (top and bottom, animating)
+  const flipAngle = Math.sin(frameCount * 0.35) * 6;
+  px(-8*S, -18*S+w + flipAngle, 14*S, 5*S, '#0d0d1a');
+  px(-8*S, 12*S+w - flipAngle, 14*S, 5*S, '#0d0d1a');
+  // Feet (tucked behind, visible underneath)
+  px(-16*S, 10*S+w, 5*S, 4*S, '#ff8c00');
+  px(-8*S,  12*S+w, 5*S, 3*S, '#ff8c00');
+
+  ctx.restore();
+}
+
+// Draw iceberg (top obstacle) with pointy stalactite bottom
+function drawIceberg(x, h, spikes) {
+  const iw = 70;
+  // Main ice body
+  px(x, 0, iw, h - 10, '#a8d8ea');
+  // Ice shading (darker edges)
+  px(x, 0, 6, h - 10, '#7ec8e3');
+  px(x + iw - 6, 0, 6, h - 10, '#7ec8e3');
+  // Cracks / texture lines
+  px(x + 15, 20, 3, Math.min(40, h - 30), '#90c8da');
+  px(x + 40, 10, 2, Math.min(30, h - 20), '#90c8da');
+  // Sparkle highlights
+  px(x + 10, 12, 4, 4, '#ffffff');
+  px(x + 50, 30, 3, 3, '#ffffff');
+  // Pointy stalactite spikes hanging down
+  if (spikes) {
+    for (const s of spikes) {
+      const sx = x + s.offset * iw;
+      const sw = s.width;
+      const sh = s.height;
+      // Each spike is a triangle pointing down
+      ctx.fillStyle = '#a8d8ea';
+      ctx.beginPath();
+      ctx.moveTo(sx - sw/2, h - 10);
+      ctx.lineTo(sx + sw/2, h - 10);
+      ctx.lineTo(sx, h - 10 + sh);
+      ctx.closePath();
+      ctx.fill();
+      // Shading on right side of spike
+      ctx.fillStyle = '#7ec8e3';
+      ctx.beginPath();
+      ctx.moveTo(sx, h - 10);
+      ctx.lineTo(sx + sw/2, h - 10);
+      ctx.lineTo(sx, h - 10 + sh);
+      ctx.closePath();
+      ctx.fill();
+      // Tip highlight
+      ctx.fillStyle = '#d0f0ff';
+      ctx.beginPath();
+      ctx.moveTo(sx - sw/4, h - 10);
+      ctx.lineTo(sx, h - 10);
+      ctx.lineTo(sx - 1, h - 10 + sh * 0.6);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+}
+
+// Draw rock (bottom obstacle) with pointy stalagmite top
+function drawRock(x, y, h, spikes) {
+  const rw = 70;
+  // Main rock body (below the spike zone)
+  px(x, y + 10, rw, h - 10, '#6b6b6b');
+  // Side shading
+  px(x + rw - 8, y + 10, 8, h - 10, '#4a4a4a');
+  // Highlights
+  px(x + 8,  y + 30, 5, 5, '#999');
+  px(x + 45, y + 45, 4, 4, '#888');
+  // Barnacles / spots
+  [12, 25, 38, 52].forEach(bx => px(x + bx, y + 10 + (h - 10) * 0.4, 4, 4, '#555'));
+  // Pointy stalagmite spikes going up
+  if (spikes) {
+    for (const s of spikes) {
+      const sx = x + s.offset * rw;
+      const sw = s.width;
+      const sh = s.height;
+      // Each spike is a triangle pointing up
+      ctx.fillStyle = '#6b6b6b';
+      ctx.beginPath();
+      ctx.moveTo(sx - sw/2, y + 10);
+      ctx.lineTo(sx + sw/2, y + 10);
+      ctx.lineTo(sx, y + 10 - sh);
+      ctx.closePath();
+      ctx.fill();
+      // Shading on right side
+      ctx.fillStyle = '#4a4a4a';
+      ctx.beginPath();
+      ctx.moveTo(sx, y + 10);
+      ctx.lineTo(sx + sw/2, y + 10);
+      ctx.lineTo(sx, y + 10 - sh);
+      ctx.closePath();
+      ctx.fill();
+      // Highlight on left side
+      ctx.fillStyle = '#888';
+      ctx.beginPath();
+      ctx.moveTo(sx - sw/4, y + 10);
+      ctx.lineTo(sx, y + 10);
+      ctx.lineTo(sx - 1, y + 10 - sh * 0.6);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+}
+
+// Draw fish collectible
+function drawFish(x, y, anim) {
+  const bob = Math.sin(anim * 0.1) * 3;
+  const fx = x - 14;
+  const fy = y - 8 + bob;
+
+  // Tail
+  ctx.fillStyle = '#ffd700';
+  ctx.beginPath();
+  ctx.moveTo(fx, fy + 4);
+  ctx.lineTo(fx - 8, fy);
+  ctx.lineTo(fx - 8, fy + 8);
+  ctx.closePath();
+  ctx.fill();
+
+  // Body
+  px(fx, fy + 1, 20, 12, '#ffd700');
+  // Belly
+  px(fx + 2, fy + 5, 14, 6, '#fff176');
+  // Eye
+  px(fx + 14, fy + 2, 4, 4, '#fff');
+  px(fx + 15, fy + 3, 2, 2, '#000');
+  // Fin
+  ctx.fillStyle = '#ffbf00';
+  ctx.beginPath();
+  ctx.moveTo(fx + 6,  fy + 1);
+  ctx.lineTo(fx + 12, fy - 5);
+  ctx.lineTo(fx + 14, fy + 1);
+  ctx.closePath();
+  ctx.fill();
+
+  // Sparkle
+  if ((anim % 20) < 10) {
+    px(fx + 16, fy, 3, 3, '#ffffff');
+  }
+}
+
+// Draw leopard seal (facing LEFT toward the penguin)
+function drawSeal(x, y, anim) {
+  const bob = Math.sin(anim * 0.04) * 15;
+  const sy = y + bob;
+
+  // Body (long, sleek, dark grey with spots)
+  px(x, sy + 6, SEAL_W, 20, '#5a5a6a');
+  // Belly (lighter)
+  px(x + 12, sy + 14, SEAL_W - 20, 10, '#8a8a9a');
+  // Head (front LEFT, facing penguin)
+  px(x, sy + 2, 24, 22, '#5a5a6a');
+  // Snout (pointing left)
+  px(x - 6, sy + 8, 10, 10, '#4a4a5a');
+  // Jaw (open, menacing, left side)
+  px(x - 8, sy + 14, 10, 6, '#6a3030');
+  // Teeth
+  px(x - 2, sy + 13, 2, 3, '#fff');
+  px(x - 5, sy + 13, 2, 3, '#fff');
+  px(x - 2, sy + 18, 2, 2, '#fff');
+  // Eye (menacing, on left side of head)
+  px(x + 11, sy + 6, 5, 5, '#fff');
+  px(x + 12, sy + 7, 3, 3, '#200');
+  // Pupil slit
+  px(x + 12, sy + 7, 1, 3, '#000');
+  // Leopard spots (along body behind head)
+  const spots = [28, 42, 56, 68, 78];
+  spots.forEach(sx2 => {
+    if (sx2 < SEAL_W) {
+      px(x + sx2, sy + 8, 5, 4, '#3a3a4a');
+      px(x + sx2 - 3, sy + 15, 4, 3, '#3a3a4a');
+    }
+  });
+  // Tail (RIGHT side, forked)
+  ctx.fillStyle = '#4a4a5a';
+  ctx.beginPath();
+  ctx.moveTo(x + SEAL_W - 4, sy + 10);
+  ctx.lineTo(x + SEAL_W + 12, sy + 4);
+  ctx.lineTo(x + SEAL_W + 6, sy + 12);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x + SEAL_W - 4, sy + 18);
+  ctx.lineTo(x + SEAL_W + 12, sy + 24);
+  ctx.lineTo(x + SEAL_W + 6, sy + 16);
+  ctx.closePath();
+  ctx.fill();
+  // Front flippers (near head, left side)
+  const flipAnim = Math.sin(anim * 0.1) * 4;
+  px(x + 18, sy + 22 + flipAnim, 12, 6, '#4a4a5a');
+  // Back flippers (near tail, right side)
+  px(x + SEAL_W - 16, sy + 22 - flipAnim, 10, 6, '#4a4a5a');
+}
+
+// Draw squid (rising from bottom, collectible)
+function drawSquid(x, y, anim) {
+  const wobX = Math.sin(anim * 0.08) * 4;
+  const sx = x + wobX;
+
+  // Tentacles (8 wiggly legs hanging down)
+  for (let i = 0; i < 8; i++) {
+    const tx = sx - 10 + i * 3;
+    const wave = Math.sin(anim * 0.12 + i * 0.8) * 4;
+    ctx.fillStyle = (i % 2 === 0) ? '#c850c0' : '#a040a0';
+    ctx.beginPath();
+    ctx.moveTo(tx, y + 14);
+    ctx.lineTo(tx + 2, y + 14);
+    ctx.lineTo(tx + 1 + wave, y + 28);
+    ctx.closePath();
+    ctx.fill();
+    // Suckers
+    if (i % 2 === 0) {
+      px(tx + wave * 0.5, y + 20, 2, 2, '#e080d0');
+    }
+  }
+
+  // Body (bulbous head)
+  px(sx - 10, y - 4, 22, 20, '#c850c0');
+  // Head dome (top)
+  px(sx - 8, y - 10, 18, 8, '#d060d0');
+  px(sx - 5, y - 13, 12, 5, '#d870d8');
+  // Belly shading
+  px(sx - 6, y + 2, 14, 10, '#b040b0');
+  // Eyes (big, cute)
+  px(sx - 7, y, 6, 7, '#fff');
+  px(sx + 3, y, 6, 7, '#fff');
+  // Pupils
+  px(sx - 6, y + 2, 3, 3, '#201040');
+  px(sx + 4, y + 2, 3, 3, '#201040');
+  // Sparkle in eyes
+  px(sx - 5, y + 1, 2, 2, '#fff');
+  px(sx + 5, y + 1, 2, 2, '#fff');
+
+  // Glow effect (pulsing)
+  const glowAlpha = 0.15 + Math.sin(anim * 0.1) * 0.1;
+  ctx.fillStyle = `rgba(200, 80, 200, ${glowAlpha})`;
+  ctx.beginPath();
+  ctx.arc(sx + 1, y + 4, 20, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Point value indicator
+  ctx.fillStyle = '#ffd700';
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('+15', sx + 1, y - 16);
+}
+
+// ── Background drawing ────────────────────────────────────────────────────────
+function drawBackground(offset) {
+  // Deep ocean gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0,   '#0a2a4a');
+  grad.addColorStop(0.3, '#0d3b6e');
+  grad.addColorStop(0.7, '#0a2a4a');
+  grad.addColorStop(1,   '#071a30');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Bubbles
+  ctx.fillStyle = 'rgba(100,180,255,0.15)';
+  const bubbles = [
+    {x: 40,  y: 100, r: 6},
+    {x: 120, y: 200, r: 4},
+    {x: 200, y: 350, r: 8},
+    {x: 320, y: 150, r: 5},
+    {x: 400, y: 280, r: 7},
+    {x: 60,  y: 450, r: 3},
+    {x: 260, y: 500, r: 5},
+    {x: 440, y: 420, r: 6},
+  ];
+  bubbles.forEach(b => {
+    const by = ((b.y - offset * 0.3) % H + H) % H;
+    ctx.beginPath();
+    ctx.arc(b.x, by, b.r, 0, Math.PI * 2);
+    ctx.fill();
+    // Shine
+    ctx.fillStyle = 'rgba(200,240,255,0.3)';
+    ctx.beginPath();
+    ctx.arc(b.x - b.r * 0.3, by - b.r * 0.3, b.r * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(100,180,255,0.15)';
+  });
+
+  // Seaweed
+  ctx.fillStyle = 'rgba(0,150,80,0.25)';
+  [70, 180, 320, 430].forEach((sx, i) => {
+    for (let seg = 0; seg < 5; seg++) {
+      const wave = Math.sin((offset * 0.02 + i + seg) * 0.8) * 6;
+      px(sx + wave, H - 40 - seg * 18, 8, 16, `rgba(0,${130 + seg * 8},${50 + seg * 5},0.25)`);
+    }
+  });
+}
+
+// ── Overlay screens ───────────────────────────────────────────────────────────
+function drawIdle() {
+  // Title panel
+  ctx.fillStyle = 'rgba(140,200,220,0.75)';
+  ctx.beginPath();
+  ctx.roundRect(W/2 - 150, H/2 - 120, 300, 260, 16);
+  ctx.fill();
+  ctx.strokeStyle = '#d0f0ff';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#0a2a4a';
+  ctx.font = 'bold 38px monospace';
+  ctx.fillText('NOOTY BIRD', W/2, H/2 - 65);
+
+  ctx.font = '14px monospace';
+  ctx.fillStyle = '#1a4a6a';
+  ctx.fillText('A penguin swimming adventure!', W/2, H/2 - 35);
+
+  // Animated penguin preview
+  const bob = Math.sin(frameCount * 0.08) * 4;
+  drawPenguin(W/2 - 19, H/2 - 10 + bob, 0, 0);
+
+  ctx.font = 'bold 16px monospace';
+  ctx.fillStyle = '#1a3a5a';
+  ctx.fillText('TAP or SPACE to start', W/2, H/2 + 80);
+
+  ctx.font = '13px monospace';
+  ctx.fillStyle = '#2a5a7a';
+  ctx.fillText('Avoid icebergs & rocks', W/2, H/2 + 105);
+  ctx.fillText('Catch fish & squids for bonus!', W/2, H/2 + 122);
+}
+
+function drawDead() {
+  ctx.fillStyle = 'rgba(0,0,40,0.75)';
+  ctx.beginPath();
+  ctx.roundRect(W/2 - 130, H/2 - 100, 260, 220, 16);
+  ctx.fill();
+  ctx.strokeStyle = '#f44';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#f88';
+  ctx.font = 'bold 32px monospace';
+  ctx.fillText('SPLAT!', W/2, H/2 - 55);
+
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 22px monospace';
+  ctx.fillText('Score: ' + Math.floor(score), W/2, H/2 - 15);
+
+  ctx.fillStyle = '#ffd700';
+  ctx.font = '16px monospace';
+  ctx.fillText('Best: ' + Math.floor(bestScore), W/2, H/2 + 15);
+
+  if (deathTimer > 60) {
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 16px monospace';
+    const pulse = Math.floor(deathTimer / 20) % 2 === 0;
+    ctx.globalAlpha = pulse ? 1 : 0.5;
+    ctx.fillText('TAP or SPACE to retry', W/2, H/2 + 70);
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ── Collision detection ───────────────────────────────────────────────────────
+// Point-in-triangle test
+function pointInTriangle(px, py, x1, y1, x2, y2, x3, y3) {
+  const d1 = (px - x2) * (y1 - y2) - (x1 - x2) * (py - y2);
+  const d2 = (px - x3) * (y2 - y3) - (x2 - x3) * (py - y3);
+  const d3 = (px - x1) * (y3 - y1) - (x3 - x1) * (py - y1);
+  const hasNeg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+  const hasPos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+  return !(hasNeg && hasPos);
+}
+
+// Check if any corner of the penguin hitbox is inside a spike triangle
+function hitSpike(px1, py1, px2, py2, triX1, triY1, triX2, triY2, triX3, triY3) {
+  // Test all 4 corners of penguin hitbox
+  if (pointInTriangle(px1, py1, triX1, triY1, triX2, triY2, triX3, triY3)) return true;
+  if (pointInTriangle(px2, py1, triX1, triY1, triX2, triY2, triX3, triY3)) return true;
+  if (pointInTriangle(px1, py2, triX1, triY1, triX2, triY2, triX3, triY3)) return true;
+  if (pointInTriangle(px2, py2, triX1, triY1, triX2, triY2, triX3, triY3)) return true;
+  // Test center too for narrow spikes
+  const cx = (px1 + px2) / 2, cy = (py1 + py2) / 2;
+  if (pointInTriangle(cx, cy, triX1, triY1, triX2, triY2, triX3, triY3)) return true;
+  return false;
+}
+
+function checkCollision() {
+  const px1 = penguin.x + 6,  py1 = penguin.y + 6;
+  const px2 = penguin.x + PENGUIN_W - 6, py2 = penguin.y + PENGUIN_H - 6;
+
+  // World bounds
+  if (py1 < 0 || py2 > H) return true;
+
+  for (const p of pipes) {
+    const ox = p.x, ox2 = p.x + OBS_W;
+
+    // Main body collision (rectangle vs rectangle)
+    if (!(px2 < ox || px1 > ox2)) {
+      if (py1 < p.topH - 10) return true; // iceberg body (above spike zone)
+      if (py2 > p.botY + 10) return true;  // rock body (below spike zone)
+    }
+
+    // Ice spike collision (stalactites hanging down)
+    for (const s of p.iceSpikes) {
+      const sx = p.x + s.offset * OBS_W;
+      const baseY = p.topH - 10;
+      const tipY  = baseY + s.height;
+      if (hitSpike(px1, py1, px2, py2,
+          sx - s.width/2, baseY,
+          sx + s.width/2, baseY,
+          sx, tipY)) return true;
+    }
+
+    // Rock spike collision (stalagmites pointing up)
+    for (const s of p.rockSpikes) {
+      const sx = p.x + s.offset * OBS_W;
+      const baseY = p.botY + 10;
+      const tipY  = baseY - s.height;
+      if (hitSpike(px1, py1, px2, py2,
+          sx - s.width/2, baseY,
+          sx + s.width/2, baseY,
+          sx, tipY)) return true;
+    }
+  }
+
+  // Seal collision (rectangle vs rectangle with bob)
+  for (const s of seals) {
+    const bob = Math.sin(s.anim * 0.04) * 15;
+    const sy = s.y + bob;
+    const sx1 = s.x - 8, sx2 = s.x + SEAL_W + 12; // include snout + tail
+    const sy1 = sy + 2, sy2 = sy + 28;
+    if (!(px2 < sx1 || px1 > sx2 || py2 < sy1 || py1 > sy2)) return true;
+  }
+
+  return false;
+}
+
+// ── Input ─────────────────────────────────────────────────────────────────────
+function handleInput() {
+  getAudio(); // wake audio context
+  if (state === 'idle') {
+    state = 'playing';
+    initGame();
+  } else if (state === 'playing') {
+    penguin.vy = FLAP_VEL;
+    playFlap();
+  } else if (state === 'dead' && deathTimer > 60) {
+    state = 'playing';
+    initGame();
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); handleInput(); }
+});
+canvas.addEventListener('click', e => { e.preventDefault(); handleInput(); });
+canvas.addEventListener('touchstart', e => { e.preventDefault(); handleInput(); }, { passive: false });
+
+// ── Main game loop ────────────────────────────────────────────────────────────
+function gameLoop() {
+  requestAnimationFrame(gameLoop);
+  frameCount++;
+  bgOffset += (state === 'playing') ? PIPE_SPEED : 0.5;
+
+  // Draw background
+  drawBackground(bgOffset);
+
+  if (state === 'playing') {
+    // Spawn pipes
+    nextPipeIn--;
+    if (nextPipeIn <= 0) spawnObstacle();
+
+    // Physics
+    penguin.vy += GRAVITY;
+    penguin.y  += penguin.vy;
+    penguin.angle = Math.max(-0.5, Math.min(1.0, penguin.vy * 0.07));
+    penguin.wobble = Math.sin(frameCount * 0.25) * 1.5;
+
+    // Move and cull pipes
+    pipes = pipes.filter(p => p.x + 70 > 0);
+    for (const p of pipes) {
+      p.x -= PIPE_SPEED;
+      if (!p.passed && p.x + 70 < PENGUIN_X) {
+        p.passed = true;
+      }
+    }
+
+    // Move and cull fish
+    fish = fish.filter(f => f.x + 30 > 0 && !f.eaten);
+    for (const f of fish) {
+      f.x -= PIPE_SPEED;
+      f.anim++;
+      // Check eat
+      if (!f.eaten &&
+          penguin.x + PENGUIN_W > f.x - 14 && penguin.x < f.x + 6 &&
+          penguin.y + PENGUIN_H > f.y - 8  && penguin.y < f.y + 4) {
+        f.eaten = true;
+        score += 5;
+        playMunch();
+      }
+    }
+
+    // Move and cull seals
+    seals = seals.filter(s => s.x + SEAL_W + 10 > 0);
+    for (const s of seals) {
+      s.x -= PIPE_SPEED;
+      s.anim++;
+    }
+
+    // Spawn squids (rare: ~0.3% per frame, so roughly one every ~5-6 seconds)
+    if (Math.random() < 0.003) {
+      const sqX = 80 + Math.random() * (W - 160); // random x across the screen
+      const minY = H * 0.55; // won't rise above 55% of screen height (stays in lower half)
+      squids.push({ x: sqX, y: H + 30, minY: minY + Math.random() * (H * 0.2), anim: 0, eaten: false });
+    }
+
+    // Move and cull squids
+    squids = squids.filter(s => !s.eaten && s.y > -40);
+    for (const s of squids) {
+      s.anim++;
+      // Rise slowly
+      if (s.y > s.minY) {
+        s.y -= 0.7;
+      } else {
+        // Reached max height, start sinking back
+        s.y += 0.4;
+      }
+      s.x -= PIPE_SPEED * 0.3; // drift left slowly with current
+
+      // Check eat
+      if (!s.eaten &&
+          penguin.x + PENGUIN_W > s.x - 10 && penguin.x < s.x + 12 &&
+          penguin.y + PENGUIN_H > s.y - 10 && penguin.y < s.y + 28) {
+        s.eaten = true;
+        score += 15;
+        playMunch();
+      }
+    }
+
+    // Score (time-based)
+    score += 0.055;
+    document.getElementById('score-display').textContent = Math.floor(score);
+
+    // Collision
+    if (checkCollision()) {
+      state = 'dead';
+      deathTimer = 0;
+      if (score > bestScore) bestScore = score;
+      document.getElementById('best-display').textContent = 'BEST: ' + Math.floor(bestScore);
+      playDead();
+    }
+  }
+
+  if (state === 'dead') {
+    deathTimer++;
+    // Keep penguin falling a bit
+    penguin.vy = Math.min(penguin.vy + GRAVITY, 8);
+    penguin.y  = Math.min(penguin.y + penguin.vy, H - PENGUIN_H);
+    penguin.angle = 1.4;
+  }
+
+  // Draw pipes
+  for (const p of pipes) {
+    drawIceberg(p.x, p.topH, p.iceSpikes);
+    drawRock(p.x, p.botY, p.botH, p.rockSpikes);
+  }
+
+  // Draw seals
+  for (const s of seals) {
+    drawSeal(s.x, s.y, s.anim);
+  }
+
+  // Draw squids
+  for (const s of squids) {
+    if (!s.eaten) drawSquid(s.x, s.y, s.anim);
+  }
+
+  // Draw fish
+  for (const f of fish) {
+    drawFish(f.x, f.y, f.anim);
+  }
+
+  // Draw penguin
+  if (state !== 'idle') {
+    drawPenguin(penguin.x, penguin.y, penguin.angle, penguin.wobble);
+  }
+
+  // Overlays
+  if (state === 'idle') drawIdle();
+  if (state === 'dead')  drawDead();
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+initGame();
+state = 'idle';
+document.getElementById('score-display').textContent = '';
+document.getElementById('best-display').textContent  = '';
+gameLoop();
+</script>
+</body>
+</html>
