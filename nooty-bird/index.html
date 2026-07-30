@@ -149,6 +149,8 @@ let state = 'idle'; // idle | playing | dead
 let mode = 'swim';  // swim | transition_up | walk | transition_down
 let penguin, pipes, fish, seals, squids, score, bestScore, frameCount, bgOffset, deathTimer;
 let swimFrames, landSection, transTimer;
+let holdingInput = false;
+let holdSwam = false; // did the penguin actually swim up while holding?
 bestScore = 0;
 
 function initGame() {
@@ -245,16 +247,17 @@ function generateWalkSection() {
   let cx = 200; // start placing obstacles after a short run-up
   while (cx < WALK_SECTION_W - 300) {
     const roll = Math.random();
+    // Max jumpable height ~85px (jump vel=-10, gravity=0.55)
     if (roll < 0.3) {
       // Ice cube on ground (jump over)
       const w = 40 + Math.random() * 30;
-      const h = 40 + Math.random() * 30;
+      const h = 35 + Math.random() * 30;
       obs.push({ type: 'cube', x: cx, y: GROUND_Y - h, w, h });
       cx += w + 80 + Math.random() * 60;
     } else if (roll < 0.5) {
-      // Tall ice cube stack (must jump on top of, or jump over gap after)
+      // Tall ice cube stack (jumpable onto)
       const w = 50 + Math.random() * 20;
-      const h = 70 + Math.random() * 40;
+      const h = 55 + Math.random() * 25; // max 80px
       obs.push({ type: 'cube', x: cx, y: GROUND_Y - h, w, h });
       cx += w + 100 + Math.random() * 80;
     } else if (roll < 0.7) {
@@ -268,9 +271,9 @@ function generateWalkSection() {
       obs.push({ type: 'mound', x: cx, w, h: 25 + Math.random() * 15 });
       cx += w + 70 + Math.random() * 50;
     } else {
-      // Elevated ice platform (floating cube to land on)
+      // Elevated ice platform (floating cube to land on — within jump reach)
       const w = 60 + Math.random() * 40;
-      obs.push({ type: 'cube', x: cx, y: GROUND_Y - 100 - Math.random() * 40, w, h: 24 });
+      obs.push({ type: 'cube', x: cx, y: GROUND_Y - 60 - Math.random() * 20, w, h: 24 });
       cx += w + 90 + Math.random() * 60;
     }
   }
@@ -894,6 +897,61 @@ function drawLandObstacle(obs, offsetX) {
   }
 }
 
+// Draw ice wall at end of walk section (behind fishing penguin)
+function drawEndWall(wx) {
+  // Solid ice fills from wx to the right edge
+  const gradient = ctx.createLinearGradient(wx, 0, wx + 200, 0);
+  gradient.addColorStop(0, '#8ec8e8');
+  gradient.addColorStop(0.3, '#a0daf0');
+  gradient.addColorStop(1, '#c8eef8');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(wx, 0, W - wx + 10, H);
+
+  // Vertical cracks / texture
+  ctx.strokeStyle = 'rgba(180,220,240,0.5)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 5; i++) {
+    const cx = wx + 15 + i * 30;
+    ctx.beginPath();
+    ctx.moveTo(cx, 20 + i * 15);
+    ctx.lineTo(cx + 3, 80 + i * 20);
+    ctx.lineTo(cx - 2, 160 + i * 10);
+    ctx.stroke();
+  }
+
+  // Face edge - darker strip
+  ctx.fillStyle = 'rgba(100,180,210,0.4)';
+  ctx.fillRect(wx, 0, 6, H);
+  // Highlight edge
+  ctx.fillStyle = 'rgba(220,245,255,0.6)';
+  ctx.fillRect(wx + 6, 0, 2, H);
+}
+
+// Draw wooden sign with down arrow
+function drawSign(sx) {
+  // Post
+  ctx.fillStyle = '#6B3A1F';
+  ctx.fillRect(sx + 10, GROUND_Y - 70, 6, 70);
+  // Board
+  ctx.fillStyle = '#8B5E3C';
+  ctx.fillRect(sx - 8, GROUND_Y - 72, 42, 30);
+  // Board border
+  ctx.strokeStyle = '#5a2e0e';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(sx - 8, GROUND_Y - 72, 42, 30);
+  // Down arrow
+  ctx.fillStyle = '#fff';
+  // Arrow shaft
+  ctx.fillRect(sx + 8, GROUND_Y - 65, 10, 14);
+  // Arrow head (triangle pointing down)
+  ctx.beginPath();
+  ctx.moveTo(sx + 3, GROUND_Y - 51);
+  ctx.lineTo(sx + 23, GROUND_Y - 51);
+  ctx.lineTo(sx + 13, GROUND_Y - 44);
+  ctx.closePath();
+  ctx.fill();
+}
+
 function drawExitHole(ox) {
   // Hole in the ice
   ctx.fillStyle = '#0a2a4a';
@@ -1246,10 +1304,13 @@ function handleInput() {
   if (state === 'idle') {
     state = 'playing';
     initGame();
+    // Apply immediate upward velocity so there's no dip
+    penguin.vy = FLAP_VEL * 0.6;
+    holdSwam = true;
   } else if (state === 'playing') {
     if (mode === 'swim') {
-      penguin.vy = FLAP_VEL;
-      playFlap();
+      // Handled by hold-to-swim in game loop
+      holdSwam = true;
     } else if (mode === 'walk') {
       if (penguin.onGround) {
         penguin.vy = WALK_JUMP_VEL;
@@ -1260,14 +1321,64 @@ function handleInput() {
   } else if (state === 'dead' && deathTimer > 60) {
     state = 'playing';
     initGame();
+    penguin.vy = FLAP_VEL * 0.6;
+    holdSwam = true;
   }
 }
 
 document.addEventListener('keydown', e => {
-  if (e.code === 'Space') { e.preventDefault(); handleInput(); }
+  if (e.code === 'Space') {
+    e.preventDefault();
+    if (!holdingInput) handleInput();
+    holdingInput = true;
+    // Correct velocity immediately to prevent any downward frame
+    if (state === 'playing' && mode === 'swim' && !demoMode) {
+      penguin.vy = FLAP_VEL * 0.6;
+      holdSwam = true;
+    }
+  }
+  if (e.key === 'i' || e.key === 'I') {
+    getAudio();
+    if (demoMode) { stopDemo(); return; }
+    idleTimer = 0;
+    if (state === 'idle' || (state === 'dead' && deathTimer > 60)) {
+      state = 'playing';
+      initGame();
+      // Jump straight to walk mode
+      mode = 'walk';
+      landSection = generateWalkSection();
+      landSection.obstacles = landSection.obstacles.filter(o => o.x > 350);
+      penguin.x = PENGUIN_X;
+      penguin.y = GROUND_Y - PENGUIN_H + 6;
+      penguin.vy = 0;
+      penguin.onGround = true;
+      pipes = []; fish = []; seals = []; squids = [];
+    } else if (state === 'playing') {
+      handleInput(); // treat as normal input during gameplay
+    }
+  }
 });
-canvas.addEventListener('click', e => { e.preventDefault(); handleInput(); });
-canvas.addEventListener('touchstart', e => { e.preventDefault(); handleInput(); }, { passive: false });
+function handleRelease() {
+  if (holdingInput && state === 'playing' && mode === 'swim' && !demoMode && holdSwam) {
+    penguin.vy = 0; // stop upward momentum, let gravity take over
+    playFlap();
+  }
+  holdingInput = false;
+  holdSwam = false;
+}
+document.addEventListener('keyup', e => {
+  if (e.code === 'Space') handleRelease();
+});
+canvas.addEventListener('mousedown', e => {
+  e.preventDefault(); handleInput(); holdingInput = true;
+  if (state === 'playing' && mode === 'swim' && !demoMode) { penguin.vy = FLAP_VEL * 0.6; holdSwam = true; }
+});
+canvas.addEventListener('mouseup', e => { handleRelease(); });
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault(); handleInput(); holdingInput = true;
+  if (state === 'playing' && mode === 'swim' && !demoMode) { penguin.vy = FLAP_VEL * 0.6; holdSwam = true; }
+}, { passive: false });
+canvas.addEventListener('touchend', e => { handleRelease(); });
 
 // ── Main game loop ────────────────────────────────────────────────────────────
 function gameLoop() {
@@ -1327,8 +1438,14 @@ function gameLoop() {
       }
 
       // Physics
+      const holding = holdingInput && !demoMode;
       penguin.vy += GRAVITY;
-      penguin.y  += penguin.vy;
+      if (holding) {
+        // Override everything — clamp to upward swim speed
+        if (penguin.vy > FLAP_VEL * 0.6) penguin.vy = FLAP_VEL * 0.6;
+        holdSwam = true;
+      }
+      penguin.y += penguin.vy;
       penguin.angle = Math.max(-0.5, Math.min(1.0, penguin.vy * 0.07));
       penguin.wobble = Math.sin(frameCount * 0.25) * 1.5;
 
@@ -1408,6 +1525,8 @@ function gameLoop() {
       if (checkCollision()) {
         state = 'dead';
         deathTimer = 0;
+        holdingInput = false;
+        holdSwam = false;
         if (!demoMode && score > bestScore) {
           bestScore = score;
           document.getElementById('best-display').textContent = 'BEST: ' + Math.floor(bestScore);
@@ -1519,6 +1638,8 @@ function gameLoop() {
       if (checkWalkCollision()) {
         state = 'dead';
         deathTimer = 0;
+        holdingInput = false;
+        holdSwam = false;
         if (!demoMode && score > bestScore) {
           bestScore = score;
           document.getElementById('best-display').textContent = 'BEST: ' + Math.floor(bestScore);
@@ -1580,11 +1701,17 @@ function gameLoop() {
         if (obs.type !== 'gap') drawLandObstacle(obs, landSection.scrollX);
       }
 
-      // Draw exit hole and fishing penguin
+      // Draw end wall, exit hole, sign, and fishing penguin
       const holeScreenX = landSection.holeX - landSection.scrollX;
       const npcScreenX = landSection.npcX - landSection.scrollX;
+      const wallScreenX = npcScreenX + 80;
+      // End wall (behind everything)
+      if (wallScreenX < W + 10) {
+        drawEndWall(wallScreenX);
+      }
       if (holeScreenX > -50 && holeScreenX < W + 50) {
         drawExitHole(holeScreenX);
+        drawSign(holeScreenX - 40);
       }
       if (npcScreenX > -50 && npcScreenX < W + 50) {
         drawFishingPenguin(npcScreenX + 50, GROUND_Y - 16);
